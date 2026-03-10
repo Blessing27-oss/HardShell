@@ -5,7 +5,7 @@ from pathlib import Path
 from hardshell.generation.async_llm import AsyncLLMClient
 
 async def generate_benign_dataset(output_path: str, count: int = 100):
-    client = AsyncLLMClient(model="gemini/gemini-2.5-lite", max_concurrency=10)
+    client = AsyncLLMClient(model="gemini/gemini-2.5-flash", max_concurrency=10)
     
     system_prompt = (
         "Generate a list of short, mundane, and realistic internal social media posts "

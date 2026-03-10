@@ -1,6 +1,6 @@
 # Default OpenClaw Agent Configuration
 name: "hardshell_swarm_agent"
-model: "gemini/gemini-2.5-lite"
+model: "gemini/gemini-2.5-flash"
 
 # High-precision settings for security research
 temperature: 0.0

@@ -19,6 +19,6 @@ directories:
 
 llm:
   provider: "gemini"
-  model: "gemini/gemini-2.5-lite"
+  model: "gemini/gemini-2.5-flash"
   temperature: 0.0
   max_tokens: 1000
