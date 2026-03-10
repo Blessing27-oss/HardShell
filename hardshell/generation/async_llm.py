@@ -1,8 +1,9 @@
 """LiteLLM routing & concurrency mapper."""
 # hardshell/generation/async_llm.py
 import asyncio
+import json
 import logging
-from typing import Any, Dict, List
+from typing import Awaitable, Callable, Dict, List, Union
 from pydantic import BaseModel, ConfigDict, Field
 import litellm
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -85,3 +86,67 @@ class AsyncLLMClient:
             except Exception as e:
                 logger.warning(f"Judge evaluation failed or JSON malformed, retrying... Error: {e}")
                 raise e
+
+    async def run_tool_loop(
+        self,
+        messages: List[Dict],
+        tools: List[Dict],
+        dispatch: Callable[[str, dict], Awaitable[str]],
+        max_iterations: int = 5,
+        temperature: float = 0.0,
+    ) -> List[Dict]:
+        """
+        Runs a standard tool-use agentic loop until the model stops calling tools
+        or max_iterations is reached.
+
+        Args:
+            messages:       Initial message history (system + user turn).
+            tools:          LiteLLM-compatible tool schema list.
+            dispatch:       Callable(tool_name, tool_args) -> JSON string result.
+                            Typically SandboxToolExecutor.dispatch or _AgentBExecutor.dispatch.
+            max_iterations: Hard cap on loop turns to prevent runaway agents.
+            temperature:    Forwarded to each completion call.
+
+        Returns:
+            Full message history including all tool calls and results.
+        """
+        history = list(messages)
+
+        for _ in range(max_iterations):
+            async with self.semaphore:
+                response = await litellm.acompletion(
+                    model=self.model,
+                    messages=history,
+                    tools=tools,
+                    temperature=temperature,
+                )
+
+            msg = response.choices[0].message
+
+            # Reconstruct a plain dict so history stays JSON-serialisable
+            assistant_turn: Dict = {"role": "assistant", "content": msg.content}
+            if msg.tool_calls:
+                assistant_turn["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ]
+            history.append(assistant_turn)
+
+            if not msg.tool_calls:
+                break
+
+            for tc in msg.tool_calls:
+                args = json.loads(tc.function.arguments)
+                result = await dispatch(tc.function.name, args)
+                history.append(
+                    {"role": "tool", "tool_call_id": tc.id, "content": result}
+                )
+
+        return history

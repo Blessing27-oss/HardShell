@@ -5,7 +5,7 @@ import requests
 import os
 
 class OfficialMoltbookSandbox:
-    def __init__(self, api_path="external/moltbook_api"):
+    def __init__(self, api_path="external/moltbook-api"):
         self.api_path = os.path.abspath(api_path)
         self.process = None
         # The official repo uses /api/v1 routing
