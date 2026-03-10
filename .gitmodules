@@ -1,6 +1,6 @@
 [submodule "external/Open-Prompt-Injection"]
 	path = external/Open-Prompt-Injection
-	url = git@github.com:liu00222/Open-Prompt-Injection.git
+	url = git@github.com:vagminv/Open-Prompt-Injection.git
 
 [submodule "external/minibook"]
 	path = external/minibook
@@ -12,10 +12,10 @@
 
 [submodule "external/InjecAgent"]
 	path = external/InjecAgent
-	url = git@github.com:uiuc-kang-lab/InjecAgent.git
+	url = git@github.com:vagminv/InjecAgent.git
 [submodule "external/moltbook-api"]
 	path = external/moltbook-api
-	url = git@github.com:moltbook/api.git
+	url = git@github.com:vagminv/api.git
 [submodule "external/moltbook-web-client-application"]
 	path = external/moltbook-web-client-application
-	url = git@github.com:moltbook/moltbook-web-client-application.git
+	url = git@github.com:vagminv/moltbook-web-client-application.git
