@@ -1,0 +1,5 @@
+# Condition 3: internal firewall (F_int)
+condition: 3
+defense: internal
+data_num: 50
+seed: 42
