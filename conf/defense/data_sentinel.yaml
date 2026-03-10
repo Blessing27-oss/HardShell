@@ -1,0 +1,15 @@
+# DataSentinel defense configuration (DataSentinelDetector / QLoraModel)
+# Sourced from: external/Open-Prompt-Injection/OpenPromptInjection/apps/DataSentinelDetector.py
+
+model_info:
+  # Base model used by QLoraModel. Must match the checkpoint the LoRA was trained on.
+  name: "mistralai/Mistral-7B-v0.1"
+  provider: "mistral"
+
+params:
+  max_output_tokens: 128
+  device: "cuda"
+  # Path to the fine-tuned DataSentinel LoRA checkpoint.
+  # Set to "" to fall back to the base model (KAD detection will be unreliable).
+  # Download from the Open-Prompt-Injection repo or HuggingFace Hub.
+  ft_path: ""

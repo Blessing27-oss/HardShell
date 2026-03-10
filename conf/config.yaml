@@ -1,8 +1,9 @@
 defaults:
   - _self_
   - simulation: condition_1  # Default to no defense
-  - agent: default
+  - agent: molten_persona
   - analysis: default
+  - defense: data_sentinel
 
 experiment_name: "hardshell_v1"
 num_trials: 500             # Standardizing to your paper's requirements
