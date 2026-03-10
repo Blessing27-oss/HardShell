@@ -1,6 +1,6 @@
 [submodule "external/Open-Prompt-Injection"]
 	path = external/Open-Prompt-Injection
-	url = https://github.com/Blessing27-oss/Open-Prompt-Injection-CS89.34.git
+	url = git@github.com:liu00222/Open-Prompt-Injection.git
 
 [submodule "external/minibook"]
 	path = external/minibook
