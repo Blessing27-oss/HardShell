@@ -1,5 +1,10 @@
-# Condition 2: perimeter firewall (F_perim)
+# Condition 2: Perimeter firewall
+# DataSentinel screens the feed before any agent reads it (on_read).
+# Maps to a real Moltbook deployment: server-side content moderation on GET /posts.
 condition: 2
 defense: perimeter
 data_num: 50
 seed: 42
+firewalls:
+  - position: on_read
+    agents: all
