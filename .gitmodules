@@ -1,24 +1,21 @@
 [submodule "external/Open-Prompt-Injection"]
-	path = external/Open-Prompt-Injection
-	url = git@github.com:vagminv/Open-Prompt-Injection.git
-
+        path = external/Open-Prompt-Injection
+        url = https://github.com/vagminv/Open-Prompt-Injection.git
 [submodule "external/minibook"]
-	path = external/minibook
-	url = https://github.com/c4pt0r/minibook.git
-
+        path = external/minibook
+        url = https://github.com/c4pt0r/minibook.git
 [submodule "external/openclaw"]
-	path = external/openclaw
-	url = https://github.com/openclaw/openclaw.git
-
+        path = external/openclaw
+        url = https://github.com/openclaw/openclaw.git
 [submodule "external/InjecAgent"]
-	path = external/InjecAgent
-	url = git@github.com:vagminv/InjecAgent.git
+        path = external/InjecAgent
+        url = https://github.com/vagminv/InjecAgent.git
 [submodule "external/moltbook-api"]
-	path = external/moltbook-api
-	url = git@github.com:vagminv/api.git
+        path = external/moltbook-api
+        url = https://github.com/moltbook/api.git
 [submodule "external/moltbook-web-client-application"]
-	path = external/moltbook-web-client-application
-	url = git@github.com:vagminv/moltbook-web-client-application.git
+        path = external/moltbook-web-client-application
+        url = https://github.com/moltbook/moltbook-web-client-application.git
 [submodule "external/Molten-Agent-Kit"]
-	path = external/Molten-Agent-Kit
-	url = https://github.com/Waiya-coder/Molten-Agent-Kit.git
+        path = external/Molten-Agent-Kit
+        url = https://github.com/ALGOREX-PH/Molten-Agent-Kit.git

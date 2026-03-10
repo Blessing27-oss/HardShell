@@ -7,9 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 HardShell is a research platform for studying prompt injection in multi-agent LLM systems. It simulates a two-agent swarm (Agent A → Agent B) reading from a social timeline (Moltbook) where an attacker can inject malicious posts. The experiment compares three defense conditions: no defense, perimeter firewall (`F_perim`), and zero-trust with internal firewall (`F_int`).
 
 External dependencies live in `external/` as git submodules:
-- `external/Open-Prompt-Injection` — baseline attack/defense toolkit (USENIX Security 2024)
-- `external/InjecAgent` — injection attack dataset source
-- `external/minibook` / `external/openclaw` — Moltbook environment and agent framework
+- `external/Open-Prompt-Injection` — baseline attack/defense toolkit (USENIX Security 2024), fork at `vagminv/Open-Prompt-Injection`
+- `external/InjecAgent` — injection attack dataset source, fork at `vagminv/InjecAgent`
+- `external/moltbook-api` — Moltbook backend API (`vagminv/api`)
+- `external/moltbook-web-client-application` — Moltbook frontend (`vagminv/moltbook-web-client-application`)
+- `external/minibook` / `external/openclaw` — upstream Moltbook environment and agent framework
 
 ## Environment Setup
 
