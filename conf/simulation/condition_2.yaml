@@ -1,0 +1,5 @@
+# Condition 2: perimeter firewall (F_perim)
+condition: 2
+defense: perimeter
+data_num: 50
+seed: 42

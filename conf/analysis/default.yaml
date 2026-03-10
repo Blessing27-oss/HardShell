@@ -1,0 +1,22 @@
+# Analysis & Reporting Configuration
+name: "hardshell_statistical_suite"
+
+# 1. Semantic Clustering Settings (The Proof of Laundering)
+clustering:
+  embedding_model: "all-MiniLM-L6-v2"
+  n_clusters: 5
+  random_state: 42
+  text_column: "agent_A_internal_message"
+
+# 2. Regression Settings (The Utility Tax Proof)
+regression:
+  dependent_variable: "task_completed"  # TCR
+  independent_variable: "condition"     # Experimental Group
+  use_robust_errors: true               # Heteroscedasticity-robust SEs
+
+# 3. Visualization Settings
+plotting:
+  style: "seaborn-v0_8-paper"
+  dpi: 300
+  format: "pdf"                         # Vector graphics for LaTeX/Overleaf
+  colors: ["#2c3e50", "#e74c3c", "#2ecc71"] # Professional Navy, Red, Green

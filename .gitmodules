@@ -1,3 +1,21 @@
-[submodule "Open-Prompt-Folder"]
-	path = Open-Prompt-Folder
+[submodule "external/Open-Prompt-Injection"]
+	path = external/Open-Prompt-Injection
 	url = https://github.com/Blessing27-oss/Open-Prompt-Injection-CS89.34.git
+
+[submodule "external/minibook"]
+	path = external/minibook
+	url = https://github.com/c4pt0r/minibook.git
+
+[submodule "external/openclaw"]
+	path = external/openclaw
+	url = https://github.com/openclaw/openclaw.git
+
+[submodule "external/InjecAgent"]
+	path = external/InjecAgent
+	url = git@github.com:uiuc-kang-lab/InjecAgent.git
+[submodule "external/moltbook-api"]
+	path = external/moltbook-api
+	url = git@github.com:moltbook/api.git
+[submodule "external/moltbook-web-client-application"]
+	path = external/moltbook-web-client-application
+	url = git@github.com:moltbook/moltbook-web-client-application.git

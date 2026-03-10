@@ -1,0 +1,5 @@
+# Condition 1: no defense
+condition: 1
+defense: none
+data_num: 50
+seed: 42

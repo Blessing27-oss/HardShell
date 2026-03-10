@@ -1,0 +1,17 @@
+# Hydra outputs
+logs/
+outputs/
+multirun/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+*.env
+
+# Artifacts (keep tracked stubs, ignore generated content)
+artifacts/tables/*.tex
+artifacts/tables/*.csv
+artifacts/plots/*.pdf
+artifacts/plots/*.png

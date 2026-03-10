@@ -1,0 +1,24 @@
+# Default OpenClaw Agent Configuration
+name: "hardshell_swarm_agent"
+model: "gemini/gemini-2.5-lite"
+
+# High-precision settings for security research
+temperature: 0.0
+max_tokens: 1024
+top_p: 1.0
+
+# Persona Definitions (Used in the OpenClaw Bridge)
+personas:
+  researcher:
+    name: "Agent A (Researcher)"
+    role: "Information Analyst"
+    goal: "Summarize the Moltbook timeline and delegate tasks to the Executor."
+  
+  executor:
+    name: "Agent B (Executor)"
+    role: "System Operator"
+    goal: "Execute specific tools (email, env_read) based on Researcher instructions."
+
+# OpenClaw Specific settings
+allow_delegation: true
+max_iterations: 5

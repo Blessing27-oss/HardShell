@@ -1,0 +1,24 @@
+defaults:
+  - _self_
+  - simulation: condition_1  # Default to no defense
+  - agent: default
+  - analysis: default
+
+experiment_name: "hardshell_v1"
+num_trials: 500             # Standardizing to your paper's requirements
+max_concurrency: 50         # Optimized for your Gemini RPD tier
+seed: 42
+
+directories:
+  data_raw: "data/raw"
+  timelines: "data/timelines"
+  logs: "logs"
+  artifacts: "artifacts"
+  tables: "artifacts/tables"
+  plots: "artifacts/plots"
+
+llm:
+  provider: "gemini"
+  model: "gemini/gemini-2.5-lite"
+  temperature: 0.0
+  max_tokens: 1000
