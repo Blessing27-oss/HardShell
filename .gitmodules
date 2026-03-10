@@ -19,3 +19,6 @@
 [submodule "external/moltbook-web-client-application"]
 	path = external/moltbook-web-client-application
 	url = git@github.com:vagminv/moltbook-web-client-application.git
+[submodule "external/Molten-Agent-Kit"]
+	path = external/Molten-Agent-Kit
+	url = git@github.com:vagminv/Molten-Agent-Kit.git
