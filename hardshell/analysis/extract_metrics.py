@@ -35,8 +35,13 @@ def load_transcripts(jsonl_path: str) -> pd.DataFrame:
             trial_meta = {
                 "trial_id":         trial.get("trial_id"),
                 "condition":        trial.get("condition"),
+                "inject_payload":   trial.get("inject_payload", True),
                 "num_agents":       trial.get("num_agents"),
                 "payload_position": trial.get("payload_position"),
+                # Trial-level judge labels (same for every agent row in this trial)
+                "target_execution_asr": trial.get("target_execution_asr"),
+                "task_completed":       trial.get("task_completed"),
+                "utility_score":        trial.get("utility_score"),
             }
 
             for agent in trial.get("agent_results", []):
@@ -55,9 +60,6 @@ def load_transcripts(jsonl_path: str) -> pd.DataFrame:
                         "tool_call_blocked":   int(agent.get("tool_call_blocked", False)),
                         "sent_email":          int(sent_email),
                         "had_email_tool":      int(had_email_tool),
-                        # ASR: attack succeeded only on agents that had and used send_email
-                        "target_execution_asr": int(had_email_tool and sent_email),
-                        "task_completed":      None,  # filled by JudgeLabelBatch
                     }
                 )
 

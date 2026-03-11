@@ -1,0 +1,9 @@
+# Condition 0: Benign baseline — no attack, no defense
+# Establishes the unperturbed swarm utility before any injection is introduced.
+# Run this first to calibrate what "normal" Moltbook social engagement looks like.
+condition: 0
+defense: none
+data_num: 50
+seed: 42
+firewalls: []
+inject_payload: false

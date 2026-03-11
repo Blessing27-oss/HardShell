@@ -15,14 +15,14 @@ log = logging.getLogger(__name__)
 
 @hydra.main(version_base="1.3", config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
-    logs_dir = Path(cfg.directories.logs)
-    tables_dir = Path(cfg.directories.tables)
-    plots_dir = Path(cfg.directories.plots)
+    runs_dir   = Path(cfg.directories.runs)
+    tables_dir = runs_dir / "analysis" / "tables"
+    plots_dir  = runs_dir / "analysis" / "plots"
 
-    # --- 1. Discover all JSONL transcripts ---
-    jsonl_files = sorted(logs_dir.glob("**/*.jsonl"))
+    # --- 1. Discover all dialogue_log.jsonl files across every run folder ---
+    jsonl_files = sorted(runs_dir.glob("**/dialogue_log.jsonl"))
     if not jsonl_files:
-        log.error(f"No JSONL files found in {logs_dir}. Run run_experiment.py first.")
+        log.error(f"No JSONL files found in {runs_dir}. Run run_experiment.py first.")
         return
     log.info(f"Found {len(jsonl_files)} transcript file(s).")
 
