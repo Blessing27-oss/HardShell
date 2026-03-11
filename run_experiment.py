@@ -276,6 +276,7 @@ def main(cfg: DictConfig) -> None:
             for i, payload in enumerate(payloads[: cfg.num_trials])
         ]
         await tqdm.gather(*tasks, desc=f"[{cfg.simulation.defense}]")
+        await llm_client.aclose()
 
     print(
         f"\nHardShell — condition={cfg.simulation.defense} | "

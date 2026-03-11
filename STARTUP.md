@@ -7,10 +7,22 @@ This guide walks through starting the full stack and running a 3-trial smoketest
 ## Prerequisites checklist
 
 - [ ] Docker Desktop is running (needed for the Moltbook Postgres container)
-- [ ] `conda activate hardshell` is active
+- [ ] `conda activate open_prompt_env` is active (the env from `external/Open-Prompt-Injection`)
+- [ ] `google-genai` is installed in that env (one-time, see below)
 - [ ] Root `.env` exists with `GEMINI_API_KEY`, `SANDBOX_TOKEN`, and `MOLTBOOK_API_URL`
 - [ ] `external/moltbook-api/.env` exists with matching `SANDBOX_TOKEN=hardshell_sandbox_dev`
 - [ ] Submodules initialized: `git submodule update --init --recursive`
+
+---
+
+## One-time: install missing packages into open_prompt_env
+
+`open_prompt_env` already has hydra, tenacity, pydantic, requests, sentence-transformers, etc. Only two packages are missing. **Do not `pip install -r requirements.txt`** — that file is a lockfile for a clean env and will conflict with Open-Prompt-Injection's pinned deps (accelerate, datasets).
+
+```bash
+conda activate open_prompt_env
+pip install google-genai scienceplots
+```
 
 ---
 
@@ -21,7 +33,7 @@ bash dev.sh
 ```
 
 **What this does:**
-1. Runs `docker compose up -d` inside `external/moltbook-api/` to start a Postgres container (the swarm feed is stored here between inject and read calls)
+1. Runs `docker compose up -d` inside `external/moltbook-api/` to start a Postgres container on port 5433 (remapped to avoid conflict with your local Postgres on 5432)
 2. Polls `pg_isready` until Postgres accepts connections
 3. Runs `npm run dev` to start the Express API on `http://127.0.0.1:3000`
 
@@ -39,7 +51,7 @@ You should get `{"posts":[]}`.
 ## Step 2 — Run the smoketest (Terminal B)
 
 ```bash
-conda activate hardshell
+conda activate open_prompt_env
 
 python run_experiment.py \
   simulation=condition_1 \
@@ -49,7 +61,7 @@ python run_experiment.py \
 
 **What this does:**
 - `simulation=condition_1` — no firewall (baseline), `defense: none`, empty `firewalls: []`
-- `num_trials=3` — runs 3 attack trials sequentially/concurrently
+- `num_trials=3` — runs 3 attack trials concurrently
 - `num_agents=3` — slices the first 3 agents from `conf/swarm/default.yaml` (`analyst`, `coordinator`, `developer`)
 
 Each trial:
@@ -95,6 +107,7 @@ Each line is one JSON trial record with:
 | `Connection refused` on API call | Moltbook API not up yet | Wait for `npm run dev` to print listening port, or rerun `dev.sh` |
 | `403 Forbidden` from sandbox endpoints | `SANDBOX_TOKEN` mismatch | Check root `.env` and `external/moltbook-api/.env` both have `hardshell_sandbox_dev` |
 | `GEMINI_API_KEY not found` | Missing env var | Add `GEMINI_API_KEY=...` to root `.env` |
+| `ModuleNotFoundError: google` | google-genai not installed | `pip install google-genai` in `open_prompt_env` |
 | `ModuleNotFoundError: OpenPromptInjection` | Submodule not initialized | `git submodule update --init --recursive` |
 | `DataSentinel` errors | Only relevant in condition 2/3 | Condition 1 has no firewall; ignore for smoketest |
 | Empty `logs/dialogue_log.jsonl` | Trial crashed before append | Check terminal B for Python traceback |

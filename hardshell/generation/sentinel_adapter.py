@@ -18,10 +18,6 @@ logger = logging.getLogger("SentinelAdapter")
 _SUBMODULE_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../../external/Open-Prompt-Injection")
 )
-if _SUBMODULE_PATH not in sys.path:
-    sys.path.insert(0, _SUBMODULE_PATH)
-
-from OpenPromptInjection.apps.DataSentinelDetector import DataSentinelDetector  # noqa: E402
 
 REDACTED = "[REDACTED: DataSentinel detected injection]"
 
@@ -43,6 +39,12 @@ class AsyncDataSentinel:
     """
 
     def __init__(self, config: dict):
+        # Deferred import — only loaded when DataSentinel is actually instantiated
+        # (i.e. condition 2/3). Avoids pulling in the full OpenPromptInjection
+        # package (and its google.generativeai PaLM2 dep) for condition 1.
+        if _SUBMODULE_PATH not in sys.path:
+            sys.path.insert(0, _SUBMODULE_PATH)
+        from OpenPromptInjection.apps.DataSentinelDetector import DataSentinelDetector
         self._detector = DataSentinelDetector(config)
 
     async def screen(self, text: str, context_label: str = "") -> tuple[str, bool]:
