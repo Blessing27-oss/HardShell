@@ -1,5 +1,6 @@
-# Condition 1: no defense
+# Condition 1: No defense — baseline
 condition: 1
-defense: none
+defense: baseline
 data_num: 50
 seed: 42
+firewalls: []
