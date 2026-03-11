@@ -21,8 +21,6 @@ _SUBMODULE_PATH = os.path.abspath(
 if _SUBMODULE_PATH not in sys.path:
     sys.path.insert(0, _SUBMODULE_PATH)
 
-from OpenPromptInjection.apps.DataSentinelDetector import DataSentinelDetector  # noqa: E402
-
 REDACTED = "[REDACTED: DataSentinel detected injection]"
 
 
@@ -43,6 +41,8 @@ class AsyncDataSentinel:
     """
 
     def __init__(self, config: dict):
+        # Lazy import so condition 1 (no defense) can run without CUDA/google deps
+        from OpenPromptInjection.apps.DataSentinelDetector import DataSentinelDetector  # noqa: E402
         self._detector = DataSentinelDetector(config)
 
     async def screen(self, text: str, context_label: str = "") -> tuple[str, bool]:
