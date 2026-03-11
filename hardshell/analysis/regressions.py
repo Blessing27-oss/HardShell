@@ -12,7 +12,7 @@ def calculate_utility_tax(df: pd.DataFrame):
     """
     # Convert 'condition' into categorical factors (dummies)
     # Baseline is the reference group
-    df['condition'] = pd.Categorical(df['condition'], categories=['baseline', 'perimeter', 'zero_trust'])
+    df['condition'] = pd.Categorical(df['condition'], categories=['1', '2', '3'])
     
     # Model: TCR ~ Condition
     model = smf.ols(formula="task_completed ~ condition", data=df).fit()

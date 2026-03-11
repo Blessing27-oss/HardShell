@@ -6,11 +6,11 @@ clustering:
   embedding_model: "all-MiniLM-L6-v2"
   n_clusters: 5
   random_state: 42
-  text_column: "agent_A_internal_message"
+  text_column: "agent_a_topic"
 
 # 2. Regression Settings (The Utility Tax Proof)
 regression:
-  dependent_variable: "task_completed"  # TCR
+  dependent_variable: "target_execution_asr"  # ASR (TCR unavailable until JudgeLabelBatch integrated)
   independent_variable: "condition"     # Experimental Group
   use_robust_errors: true               # Heteroscedasticity-robust SEs
 
