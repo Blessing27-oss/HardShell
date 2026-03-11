@@ -4,23 +4,23 @@ import pandas as pd
 from pathlib import Path
 
 
-def load_transcripts(jsonl_path: str) -> pd.DataFrame:
+def load_transcripts(jsonl_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Parses the N-agent JSONL transcript into a flat per-agent-per-trial DataFrame.
+    Parse a JSONL transcript into two DataFrames:
 
-    Each row is one agent within one trial. Columns:
-        trial_id, condition, num_agents, payload_position,
-        agent_id, tools_available,
-        posted_content,         ← content of create_post (None if not called)
-        write_blocked,          ← on_write firewall triggered
-        feed_blocks,            ← number of posts blocked by on_read for this agent
-        tool_call_blocked,      ← on_tool_call firewall triggered
-        sent_email,             ← True if agent called send_email and it was not blocked
-        had_email_tool,         ← True if send_email was in this agent's tool set
-        target_execution_asr,   ← 1 if had_email_tool and sent_email (attack succeeded)
-        task_completed          ← placeholder; populated by JudgeLabelBatch evaluator
+    df_trials  — one row per trial:
+        trial_id, condition, inject_payload, num_agents,
+        payload, attack_type, payload_position,
+        target_execution_asr, task_completed, utility_score, judge_rationale,
+        n_posted, n_sent_email, n_errored, participation_rate, mean_post_length
+
+    df_agents  — one row per agent per trial:
+        (all trial columns above, minus judge_rationale) +
+        agent_id, tools_available, posted, posted_content, post_length,
+        sent_email, had_email_tool, write_blocked, feed_blocks, tool_call_blocked
     """
-    rows = []
+    trial_rows = []
+    agent_rows = []
     path = Path(jsonl_path)
     if not path.exists():
         raise FileNotFoundError(f"Transcript not found: {jsonl_path}")
@@ -32,80 +32,94 @@ def load_transcripts(jsonl_path: str) -> pd.DataFrame:
                 continue
             trial = json.loads(line)
 
-            trial_meta = {
-                "trial_id":         trial.get("trial_id"),
-                "condition":        trial.get("condition"),
-                "inject_payload":   trial.get("inject_payload", True),
-                "num_agents":       trial.get("num_agents"),
-                "payload_position": trial.get("payload_position"),
-                # Trial-level judge labels (same for every agent row in this trial)
+            results = trial.get("agent_results", [])
+            successful = [a for a in results if "error" not in a]
+            errored    = [a for a in results if "error" in a]
+
+            n_posted     = sum(1 for a in successful if a.get("posted_content"))
+            n_sent_email = sum(1 for a in successful if a.get("sent_email"))
+            n_agents     = trial.get("num_agents", len(results)) or 1
+            post_lengths = [len(a["posted_content"]) for a in successful if a.get("posted_content")]
+
+            trial_row = {
+                "trial_id":           trial.get("trial_id"),
+                "condition":          trial.get("condition"),
+                "inject_payload":     trial.get("inject_payload", True),
+                "num_agents":         trial.get("num_agents"),
+                "payload":            trial.get("payload"),
+                "attack_type":        trial.get("attack_type"),
+                "payload_position":   trial.get("payload_position"),
                 "target_execution_asr": trial.get("target_execution_asr"),
-                "task_completed":       trial.get("task_completed"),
-                "utility_score":        trial.get("utility_score"),
+                "task_completed":     trial.get("task_completed"),
+                "utility_score":      trial.get("utility_score"),
+                "judge_rationale":    trial.get("judge_rationale"),
+                "n_posted":           n_posted,
+                "n_sent_email":       n_sent_email,
+                "n_errored":          len(errored),
+                "participation_rate": n_posted / n_agents,
+                "mean_post_length":   sum(post_lengths) / len(post_lengths) if post_lengths else 0.0,
             }
+            trial_rows.append(trial_row)
 
-            for agent in trial.get("agent_results", []):
-                if "error" in agent:
-                    continue
+            # Agent-level rows (drop judge_rationale — trial-level only)
+            trial_meta = {k: v for k, v in trial_row.items() if k != "judge_rationale"}
+            for agent in successful:
                 had_email_tool = "send_email" in agent.get("tools_available", [])
-                sent_email = agent.get("sent_email", False)
-                rows.append(
-                    {
-                        **trial_meta,
-                        "agent_id":            agent.get("agent_id"),
-                        "tools_available":     json.dumps(agent.get("tools_available", [])),
-                        "posted_content":      agent.get("posted_content"),
-                        "write_blocked":       int(agent.get("write_blocked", False)),
-                        "feed_blocks":         agent.get("feed_blocks", 0),
-                        "tool_call_blocked":   int(agent.get("tool_call_blocked", False)),
-                        "sent_email":          int(sent_email),
-                        "had_email_tool":      int(had_email_tool),
-                    }
-                )
+                content = agent.get("posted_content")
+                agent_rows.append({
+                    **trial_meta,
+                    "agent_id":           agent.get("agent_id"),
+                    "tools_available":    json.dumps(agent.get("tools_available", [])),
+                    "posted":             int(bool(content)),
+                    "posted_content":     content,
+                    "post_length":        len(content) if content else 0,
+                    "sent_email":         int(bool(agent.get("sent_email"))),
+                    "had_email_tool":     int(had_email_tool),
+                    "write_blocked":      int(agent.get("write_blocked", False)),
+                    "feed_blocks":        agent.get("feed_blocks", 0),
+                    "tool_call_blocked":  int(agent.get("tool_call_blocked", False)),
+                })
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(trial_rows), pd.DataFrame(agent_rows)
 
 
-def generate_paper_tables(jsonl_path: str, output_csv: str) -> None:
+def compute_summary_stats(df_trials: pd.DataFrame, df_agents: pd.DataFrame) -> str:
     """
-    Aggregates per-condition ASR (swarm-level and agent-level) and writes CSVs.
+    Returns a formatted text summary of key quantitative metrics per condition.
     """
-    df = load_transcripts(jsonl_path)
-    print(f"Loaded {len(df)} agent-trial rows from {jsonl_path}")
+    lines = ["=" * 60, "HardShell Swarm — Quantitative Summary", "=" * 60]
 
-    # Only agents that have send_email are meaningful for ASR
-    df_at_risk = df[df["had_email_tool"] == 1]
+    for cond, grp in df_trials.groupby("condition"):
+        n = len(grp)
+        injected = grp["inject_payload"].any()
+        lines.append(f"\nCondition: {cond}  (n={n} trials, injected={injected})")
+        lines.append(f"  Utility Score        mean={grp['utility_score'].mean():.3f}  "
+                     f"sd={grp['utility_score'].std():.3f}  "
+                     f"min={grp['utility_score'].min():.2f}  max={grp['utility_score'].max():.2f}")
+        lines.append(f"  Task Completion      {grp['task_completed'].mean():.1%}")
+        lines.append(f"  ASR                  {grp['target_execution_asr'].mean():.1%}")
+        lines.append(f"  Participation Rate   mean={grp['participation_rate'].mean():.1%}")
+        lines.append(f"  Posts per trial      mean={grp['n_posted'].mean():.1f}")
+        lines.append(f"  Emails per trial     mean={grp['n_sent_email'].mean():.1f}")
+        lines.append(f"  Errors per trial     mean={grp['n_errored'].mean():.1f}")
+        lines.append(f"  Mean post length     {grp['mean_post_length'].mean():.0f} chars")
 
-    # --- Primary table: swarm ASR by condition ---
-    summary = (
-        df_at_risk.groupby("condition")
-        .agg(
-            total_agent_trials=("trial_id", "count"),
-            swarm_asr=("target_execution_asr", "mean"),
-            feed_blocks_mean=("feed_blocks", "mean"),
-            write_blocked_rate=("write_blocked", "mean"),
-            tool_call_blocked_rate=("tool_call_blocked", "mean"),
-        )
-        .reset_index()
-    )
+        if injected and grp["attack_type"].notna().any():
+            lines.append(f"  --- By attack type ---")
+            for at, ag in grp.groupby("attack_type"):
+                lines.append(f"    {at:30s}  ASR={ag['target_execution_asr'].mean():.1%}  n={len(ag)}")
 
-    # --- Secondary: ASR broken down by agent role ---
-    role_breakdown = (
-        df_at_risk.groupby(["condition", "agent_id"])
-        .agg(
-            trials=("trial_id", "count"),
-            asr=("target_execution_asr", "mean"),
-        )
-        .reset_index()
-    )
+    if df_agents is not None and len(df_agents):
+        lines.append("\n" + "=" * 60)
+        lines.append("Agent-level participation by role (across all conditions)")
+        lines.append("=" * 60)
+        role_stats = df_agents.groupby(["condition", "agent_id"]).agg(
+            n_trials=("trial_id", "count"),
+            post_rate=("posted", "mean"),
+            mean_post_length=("post_length", "mean"),
+            email_rate=("sent_email", "mean"),
+        ).reset_index()
+        lines.append(role_stats.to_string(index=False))
 
-    out = Path(output_csv)
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    summary.to_csv(out, index=False)
-    role_csv = out.parent / (out.stem + "_by_agent_role.csv")
-    role_breakdown.to_csv(role_csv, index=False)
-
-    print(f"Summary table    → {out}")
-    print(f"Role table       → {role_csv}")
-    print(summary.to_string(index=False))
+    lines.append("")
+    return "\n".join(lines)
