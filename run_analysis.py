@@ -5,7 +5,6 @@ from pathlib import Path
 import hydra
 import pandas as pd
 from omegaconf import DictConfig
-
 from hardshell.analysis.clustering import compute_semantic_clusters
 from hardshell.analysis.extract_metrics import load_transcripts
 from hardshell.analysis.plotting import plot_asr_vs_tcr
@@ -14,7 +13,7 @@ from hardshell.analysis.regressions import calculate_utility_tax
 log = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="conf", config_name="config", version_base=None)
+@hydra.main(version_base="1.3", config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     logs_dir = Path(cfg.directories.logs)
     tables_dir = Path(cfg.directories.tables)
