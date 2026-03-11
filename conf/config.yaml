@@ -14,10 +14,14 @@ seed: 42
 directories:
   data_raw: "data/raw"
   timelines: "data/timelines"
-  logs: "logs"
-  artifacts: "artifacts"
-  tables: "artifacts/tables"
-  plots: "artifacts/plots"
+  runs: "runs"   # root for all per-run output folders
+
+hydra:
+  run:
+    dir: runs/condition_${simulation.condition}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: runs/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: condition_${simulation.condition}
 
 llm:
   provider: "gemini"

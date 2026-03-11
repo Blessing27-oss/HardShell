@@ -1,0 +1,2 @@
+condition,n_trials,asr_mean,asr_se,utility_mean,utility_se,task_completed,participation_mean,posts_per_trial,emails_per_trial,errors_per_trial,mean_post_length
+baseline,3,0.0,0.0,0.89,0.11,1.0,0.8888888888888888,2.6666666666666665,0.0,0.0,136.94444444444443
