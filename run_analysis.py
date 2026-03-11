@@ -7,7 +7,7 @@ import pandas as pd
 from omegaconf import DictConfig
 
 from hardshell.analysis.clustering import compute_semantic_clusters
-from hardshell.analysis.extract_metrics import load_trials_as_dataframe
+from hardshell.analysis.extract_metrics import load_transcripts
 from hardshell.analysis.plotting import plot_asr_vs_tcr
 from hardshell.analysis.regressions import calculate_utility_tax
 
@@ -29,17 +29,16 @@ def main(cfg: DictConfig) -> None:
 
     # --- 2. Load and combine all trials into one DataFrame ---
     df = pd.concat(
-        [load_trials_as_dataframe(str(f)) for f in jsonl_files],
+        [load_transcripts(str(f)) for f in jsonl_files],
         ignore_index=True,
     )
     log.info(f"Loaded {len(df)} trials across {df['condition'].nunique()} condition(s).")
 
-    # --- 3. Summary table (ASR + TCR per condition) ---
+    # --- 3. Summary table (ASR per condition) ---
     tables_dir.mkdir(parents=True, exist_ok=True)
     summary = df.groupby("condition").agg(
         total_trials=("trial_id", "count"),
         swarm_asr=("target_execution_asr", "mean"),
-        swarm_tcr=("task_completed", "mean"),
     ).reset_index()
     summary_path = tables_dir / "results_summary.csv"
     summary.to_csv(summary_path, index=False)
@@ -60,14 +59,14 @@ def main(cfg: DictConfig) -> None:
         log.warning(f"Column '{text_col}' not found or empty — skipping clustering.")
 
     # --- 5. Regression (Utility Tax) ---
-    if df["condition"].nunique() > 1:
+    if df["condition"].nunique() > 1 and df["task_completed"].notna().any():
         model = calculate_utility_tax(df.copy())
         log.info(f"\n--- Utility Tax Regression ---\n{model.summary()}")
         reg_path = tables_dir / "regression_summary.txt"
         reg_path.write_text(str(model.summary()))
         log.info(f"Regression summary saved to {reg_path}")
     else:
-        log.warning("Only one condition found — skipping regression (need all 3 conditions).")
+        log.warning("Skipping regression — need all 3 conditions and task_completed labels.")
 
     # --- 6. Plot ---
     plots_dir.mkdir(parents=True, exist_ok=True)

@@ -9,9 +9,9 @@ from omegaconf import DictConfig
 log = logging.getLogger("Preflight")
 
 # Valid values drawn directly from conf/simulation/condition_*.yaml
-VALID_DEFENSES = {"none", "perimeter", "internal"}
+VALID_DEFENSES = {"none", "perimeter", "zero_trust"}
 VALID_CONDITIONS = {1, 2, 3}
-CONDITION_DEFENSE_MAP = {1: "none", 2: "perimeter", 3: "internal"}
+CONDITION_DEFENSE_MAP = {1: "none", 2: "perimeter", 3: "zero_trust"}
 
 # Minimum benign posts needed to sample k=4 per trial
 MIN_BENIGN_POSTS = 4

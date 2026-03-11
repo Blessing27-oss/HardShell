@@ -8,12 +8,13 @@ from typing import List
 
 import hydra
 from hydra.utils import get_original_cwd
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from hardshell.generation.async_llm import AsyncLLMClient
+from hardshell.generation.moltbook_connector import MoltbookAPIClient
 from hardshell.generation.openclaw_bridge import execute_swarm_trial
-from hardshell.generation.sanitizer import LLMSanitizer
-from hardshell.simulation.environment import generate_trial_timeline
+from hardshell.generation.sentinel_adapter import AsyncDataSentinel
+from hardshell.simulation.moltbook_server import OfficialMoltbookSandbox
 from hardshell.simulation.transcripts import JSONLLogger
 from hardshell.simulation.validation import PreflightError, run_preflight_checks
 
@@ -51,7 +52,6 @@ def main(cfg: DictConfig) -> None:
 
 
 async def run(cfg: DictConfig) -> None:
-    # Resolve all paths relative to project root (not Hydra's output dir)
     root = Path(get_original_cwd())
 
     # --- Pre-flight: fail fast before spending any API budget ---
@@ -61,7 +61,7 @@ async def run(cfg: DictConfig) -> None:
         log.error(f"Pre-flight check failed:\n{e}")
         raise SystemExit(1)
 
-    defense = cfg.simulation.defense      # "none", "perimeter", "internal"
+    defense = cfg.simulation.defense      # "none", "perimeter", "zero_trust"
     condition = cfg.simulation.condition  # 1, 2, or 3
 
     logs_dir = root / cfg.directories.logs
@@ -75,33 +75,45 @@ async def run(cfg: DictConfig) -> None:
 
     # --- Build shared infrastructure ---
     client = AsyncLLMClient(model=cfg.llm.model, max_concurrency=cfg.max_concurrency)
-    sanitizer = LLMSanitizer(client) if defense != "none" else None
+    sentinel = (
+        AsyncDataSentinel(OmegaConf.to_container(cfg.defense, resolve=True))
+        if defense != "none"
+        else None
+    )
+    moltbook = MoltbookAPIClient()
     logger = JSONLLogger(logs_dir / f"condition_{condition}.jsonl")
 
-    # --- Build all trial coroutines ---
-    rng = random.Random(cfg.seed + condition)  # per-condition seed for reproducibility
-    tasks = []
+    # --- Start Moltbook server ---
+    server = OfficialMoltbookSandbox(api_path=str(root / "external/moltbook-api"))
+    server.start()
 
-    for i in range(cfg.num_trials):
-        trial_id = f"c{condition}_{i:04d}"
-        benign_sample = rng.sample(benign_posts, k=min(4, len(benign_posts)))
-        payload = payloads[i % len(payloads)]
-        timeline = generate_trial_timeline(benign_sample, payload)
+    try:
+        # --- Build all trial coroutines ---
+        rng = random.Random(cfg.seed + condition)
+        tasks = []
 
-        tasks.append(execute_swarm_trial(
-            trial_id=trial_id,
-            condition=str(condition),
-            timeline=timeline,
-            defense=defense,
-            client=client,
-            sanitizer=sanitizer,
-            agent_cfg=cfg.agent,
-            logger=logger,
-        ))
+        for i in range(cfg.num_trials):
+            benign_sample = rng.sample(benign_posts, k=min(4, len(benign_posts)))
+            payload = payloads[i % len(payloads)]
 
-    # --- Run all trials concurrently (rate-limited by AsyncLLMClient semaphore) ---
-    await asyncio.gather(*tasks)
-    log.info(f"Condition {condition} complete. Log: {logs_dir}/condition_{condition}.jsonl")
+            tasks.append(execute_swarm_trial(
+                trial_id=i,
+                benign_posts=benign_sample,
+                payload=payload,
+                condition=defense,
+                llm_client=client,
+                sentinel=sentinel,
+                moltbook=moltbook,
+                logger_=logger,
+                persona_cfg=cfg.agent,
+            ))
+
+        # --- Run all trials concurrently (rate-limited by AsyncLLMClient semaphore) ---
+        await asyncio.gather(*tasks)
+        log.info(f"Condition {condition} complete. Log: {logs_dir}/condition_{condition}.jsonl")
+
+    finally:
+        server.stop()
 
 
 if __name__ == "__main__":
