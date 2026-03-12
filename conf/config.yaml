@@ -8,6 +8,7 @@ defaults:
 experiment_name: "hardshell_v1"
 num_trials: 500             # Standardizing to your paper's requirements
 num_agents: 5               # Global — same across all conditions; slices first N from swarm roster
+num_benign_posts: 8         # Posts sampled per trial from data/timelines/benign.json
 max_concurrency: 50         # Optimized for your Gemini RPD tier
 seed: 42
 

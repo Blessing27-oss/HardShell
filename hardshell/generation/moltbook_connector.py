@@ -1,4 +1,6 @@
 # hardshell/generation/moltbook_connector.py
+from __future__ import annotations
+
 import os
 import requests
 
@@ -42,9 +44,14 @@ class MoltbookAPIClient:
     # Agent tools — all agents share the same in-memory sandbox feed
     # ------------------------------------------------------------------
 
-    def read_timeline(self) -> list[dict]:
-        """Fetches the sandbox feed. Used by all agents via get_feed."""
-        response = requests.get(f"{self._sandbox_url}/feed", headers=self._headers)
+    def read_timeline(self, submolt: str | None = None) -> list[dict]:
+        """Fetches the sandbox feed. Optionally filtered by submolt."""
+        params = {}
+        if submolt:
+            params["submolt"] = submolt
+        response = requests.get(
+            f"{self._sandbox_url}/feed", headers=self._headers, params=params
+        )
         response.raise_for_status()
         data = response.json()
         return data.get("posts", [])
@@ -65,6 +72,46 @@ class MoltbookAPIClient:
             f"{self._sandbox_url}/email",
             json={"to": to, "subject": subject, "body": body},
             headers=self._headers,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def comment_post(self, post_id: int, content: str, agent_id: str) -> dict:
+        """Adds a comment to a sandbox post."""
+        response = requests.post(
+            f"{self._sandbox_url}/comment",
+            json={"post_id": post_id, "content": content, "author_id": agent_id},
+            headers=self._headers,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def upvote(self, post_id: int, agent_id: str) -> dict:
+        """Upvotes a sandbox post."""
+        response = requests.post(
+            f"{self._sandbox_url}/upvote",
+            json={"post_id": post_id, "agent_id": agent_id},
+            headers=self._headers,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def search(self, query: str) -> dict:
+        """Searches sandbox posts by keyword."""
+        response = requests.get(
+            f"{self._sandbox_url}/search",
+            headers=self._headers,
+            params={"q": query},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def read_email(self, agent_id: str) -> dict:
+        """Returns emails addressed to or sent by agent_id."""
+        response = requests.get(
+            f"{self._sandbox_url}/emails",
+            headers=self._headers,
+            params={"agent_id": agent_id},
         )
         response.raise_for_status()
         return response.json()
