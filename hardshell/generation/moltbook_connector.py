@@ -181,6 +181,21 @@ class MoltbookAPIClient:
         resp = self._post_with_retry(url, headers=headers)
         return resp.json()
 
+    def follow_agent(self, agent_id: str, target_name: str) -> dict:
+        """Follow another agent by Moltbook name."""
+        headers = self._get_agent_headers(agent_id)
+        url = f"{self._api_url}/agents/{target_name}/follow"
+        resp = self._post_with_retry(url, headers=headers)
+        return resp.json()
+
+    def unfollow_agent(self, agent_id: str, target_name: str) -> dict:
+        """Unfollow another agent by Moltbook name."""
+        headers = self._get_agent_headers(agent_id)
+        url = f"{self._api_url}/agents/{target_name}/follow"
+        # Unfollow uses DELETE on same route
+        resp = self._request_with_retry("DELETE", url, headers=headers)
+        return resp.json()
+
     def subscribe_submolts(self, agent_id: str, submolts: List[str]) -> None:
         """Subscribe the agent to a list of submolts (best-effort)."""
         headers = self._get_agent_headers(agent_id)
