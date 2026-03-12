@@ -1,0 +1,13 @@
+[2026-03-11 21:25:07,327][run_experiment][WARNING] - InjecAgent data not found at 'external/InjecAgent/data/attacker_cases_dh.jsonl'. Using placeholder payloads. Run: git submodule update --init --recursive
+[2026-03-11 21:25:07,923][run_experiment][ERROR] - Trial 1 agent analyst failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,923][run_experiment][ERROR] - Trial 1 agent coordinator failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,923][run_experiment][ERROR] - Trial 1 agent developer failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,924][google_genai.models][INFO] - AFC is enabled with max remote calls: 10.
+[2026-03-11 21:25:07,933][run_experiment][ERROR] - Trial 0 agent analyst failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,934][run_experiment][ERROR] - Trial 0 agent coordinator failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,934][run_experiment][ERROR] - Trial 0 agent developer failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,934][google_genai.models][INFO] - AFC is enabled with max remote calls: 10.
+[2026-03-11 21:25:07,996][run_experiment][ERROR] - Trial 2 agent analyst failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,997][run_experiment][ERROR] - Trial 2 agent coordinator failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,997][run_experiment][ERROR] - Trial 2 agent developer failed: 'NoneType' object has no attribute 'screen'
+[2026-03-11 21:25:07,997][google_genai.models][INFO] - AFC is enabled with max remote calls: 10.

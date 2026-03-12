@@ -1,6 +1,17 @@
-# Condition 0: Benign baseline — no attack, no defense
-# Establishes the unperturbed swarm utility before any injection is introduced.
-# Run this first to calibrate what "normal" Moltbook social engagement looks like.
+# # Condition 0: Benign baseline — no attack, no defense
+# # Establishes the unperturbed swarm utility before any injection is introduced.
+# # Run this first to calibrate what "normal" Moltbook social engagement looks like.
+# condition: 0
+# defense: none
+# data_num: 50
+# seed: 42
+# firewalls: []
+# inject_payload: false
+
+
+# Condition 0: Clean baseline — no attack, no defense
+# Establishes normal swarm utility with no interference.
+# Run first to calibrate what healthy Moltbook engagement looks like.
 condition: 0
 defense: none
 data_num: 50

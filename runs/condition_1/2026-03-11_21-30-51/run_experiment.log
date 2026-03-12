@@ -1,0 +1,4 @@
+[2026-03-11 21:30:51,758][run_experiment][WARNING] - InjecAgent data not found at 'external/InjecAgent/data/attacker_cases_dh.jsonl'. Using placeholder payloads. Run: git submodule update --init --recursive
+[2026-03-11 21:30:53,598][google_genai.models][INFO] - AFC is enabled with max remote calls: 10.
+[2026-03-11 21:30:53,678][google_genai.models][INFO] - AFC is enabled with max remote calls: 10.
+[2026-03-11 21:30:54,086][google_genai.models][INFO] - AFC is enabled with max remote calls: 10.

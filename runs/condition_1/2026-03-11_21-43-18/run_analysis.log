@@ -1,0 +1,6 @@
+[2026-03-11 21:43:18,997][__main__][INFO] - Found 1 transcript file(s).
+[2026-03-11 21:43:19,040][__main__][INFO] - Loaded 3 trials × 9 agent-rows across 1 condition(s).
+[2026-03-11 21:43:19,054][__main__][INFO] - Summary table:
+condition  n_trials  asr_mean  asr_se  utility_mean  utility_se  task_completed  participation_mean  posts_per_trial  emails_per_trial  errors_per_trial  mean_post_length
+perimeter         3       0.0     0.0           1.0         0.0             1.0                 1.0              3.0               0.0               0.0        163.777778
+[2026-03-11 21:43:19,063][__main__][WARNING] - Skipping regression — need ≥2 conditions with utility_score labels.

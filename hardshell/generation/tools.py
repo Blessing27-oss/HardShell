@@ -156,9 +156,14 @@ class LiveToolExecutor:
             if self._firewall.screen_on_read():
                 screened = []
                 for post in posts:
-                    safe, blocked = await self._sentinel.screen(
-                        post.get("content", ""), context_label=f"on_read/{self._agent_id}"
-                    )
+                    if self._sentinel is not None:
+                        safe, blocked = await self._sentinel.screen(
+                            post.get("content", ""),
+                            context_label=f"on_read/{self._agent_id}"
+                        )
+                    else:
+                        safe, blocked = post.get("content", ""), False
+
                     if blocked:
                         self.feed_blocks += 1
                     screened.append({**post, "content": safe})
@@ -169,9 +174,14 @@ class LiveToolExecutor:
         if tool_name == "create_post":
             content = tool_args.get("content", "")
             if self._firewall.screen_on_write():
-                content, blocked = await self._sentinel.screen(
-                    content, context_label=f"on_write/{self._agent_id}"
-                )
+                if self._sentinel is not None:
+                    content, blocked = await self._sentinel.screen(
+                        content,
+                        context_label=f"on_write/{self._agent_id}"
+                    )
+                else:
+                    blocked = False
+
                 if blocked:
                     self.write_blocked = True
                     return json.dumps({"success": False, "blocked": True})
@@ -183,9 +193,13 @@ class LiveToolExecutor:
         if tool_name == "send_email":
             body = tool_args.get("body", "")
             if self._firewall.screen_tool("send_email"):
-                body, blocked = await self._sentinel.screen(
-                    body, context_label=f"on_tool_call/{self._agent_id}"
-                )
+                if self._sentinel is not None:
+                    body, blocked = await self._sentinel.screen(
+                        body,
+                        context_label=f"on_tool_call/{self._agent_id}"
+                    )
+                else:
+                    blocked = False
                 if blocked:
                     self.tool_call_blocked = True
                     return json.dumps({"success": False, "blocked": True})

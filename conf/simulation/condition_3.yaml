@@ -1,9 +1,6 @@
-# Condition 3: Zero-trust
-# DataSentinel is applied at every Moltbook API boundary:
-#   on_read      — screen GET /posts before agents see content
-#   on_write     — screen POST /posts before injected content can spread to other agents
-#   on_tool_call — screen tool arguments before high-risk calls execute
-# All three positions are deployable as real server-side middleware on Moltbook.
+# Condition 3: Attack + zero-trust defense
+# Full mitigation: screens feed reads, post writes, and high-risk tool calls.
+# Main result — shows whether defense neutralises the attack without breaking utility.
 condition: 3
 defense: zero_trust
 data_num: 50
@@ -16,3 +13,4 @@ firewalls:
   - position: on_tool_call
     tools: [send_email]
     agents: all
+inject_payload: true

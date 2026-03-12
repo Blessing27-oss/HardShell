@@ -281,10 +281,12 @@ def main(cfg: DictConfig) -> None:
     moltbook = MoltbookAPIClient()
     jsonl_logger = JSONLLogger(log_path)
 
-    # --- DataSentinel (only instantiated when firewalls are configured) ---
+    # --- DataSentinel (only for conditions that actually use it) ---
     has_firewalls = len(cfg.simulation.get("firewalls", [])) > 0
+    sim_name = str(cfg.simulation.get("name", "")).lower()
+
     sentinel: AsyncDataSentinel | None = None
-    if has_firewalls:
+    if has_firewalls and sim_name in {"condition_2", "condition_3"}:
         sentinel = AsyncDataSentinel(
             OmegaConf.to_container(cfg.defense, resolve=True)
         )

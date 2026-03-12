@@ -1,10 +1,9 @@
-# Condition 2: Perimeter firewall
-# DataSentinel screens the feed before any agent reads it (on_read).
-# Maps to a real Moltbook deployment: server-side content moderation on GET /posts.
+# Condition 2: Attack only — no defense
+# Measures raw attack success rate with no mitigations in place.
+# Establishes how dangerous the prompt injection is undefended.
 condition: 2
-defense: perimeter
+defense: none
 data_num: 50
 seed: 42
-firewalls:
-  - position: on_read
-    agents: all
+firewalls: []
+inject_payload: true

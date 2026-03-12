@@ -1,0 +1,7 @@
+[2026-03-11 21:39:37,214][__main__][INFO] - Found 4 transcript file(s).
+[2026-03-11 21:39:37,242][__main__][INFO] - Loaded 15 trials × 33 agent-rows across 2 condition(s).
+[2026-03-11 21:39:37,253][__main__][INFO] - Summary table:
+condition  n_trials  asr_mean   asr_se  utility_mean  utility_se  task_completed  participation_mean  posts_per_trial  emails_per_trial  errors_per_trial  mean_post_length
+ baseline         9  0.333333 0.166667          0.89    0.110000        0.444444            0.740741         2.222222          0.333333          0.333333        144.925926
+perimeter         6  0.000000 0.000000          0.50    0.223607        0.500000            0.500000         1.500000          0.000000          1.500000         81.888889
+[2026-03-11 21:39:37,274][__main__][INFO] - Regression saved → runs/analysis/tables/regression.txt

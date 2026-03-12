@@ -1,6 +1,12 @@
-# Condition 1: No defense — baseline
+
+# Condition 1: Defense only — no attack
+# Measures the utility cost of running defenses on clean traffic.
+# Compares against condition 0 to isolate how much defense hurts normal operation.
 condition: 1
-defense: baseline
+defense: perimeter
 data_num: 50
 seed: 42
-firewalls: []
+firewalls:
+  - position: on_read
+    agents: all
+inject_payload: false

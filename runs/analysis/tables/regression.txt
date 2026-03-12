@@ -1,0 +1,27 @@
+Utility Tax Regression (baseline = baseline)
+==================================================
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:          utility_score   R-squared:                       0.162
+Model:                            OLS   Adj. R-squared:                  0.042
+Method:                 Least Squares   F-statistic:                     1.354
+Date:                Wed, 11 Mar 2026   Prob (F-statistic):              0.283
+Time:                        21:39:37   Log-Likelihood:                -4.9202
+No. Observations:                   9   AIC:                             13.84
+Df Residuals:                       7   BIC:                             14.23
+Df Model:                           1                                         
+Covariance Type:            nonrobust                                         
+=============================================================================================
+                                coef    std err          t      P>|t|      [0.025      0.975]
+---------------------------------------------------------------------------------------------
+Intercept                     0.8900      0.274      3.252      0.014       0.243       1.537
+C(condition)[T.perimeter]    -0.3900      0.335     -1.164      0.283      -1.183       0.403
+==============================================================================
+Omnibus:                        3.571   Durbin-Watson:                   0.942
+Prob(Omnibus):                  0.168   Jarque-Bera (JB):                0.991
+Skew:                          -0.012   Prob(JB):                        0.609
+Kurtosis:                       1.374   Cond. No.                         3.23
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
