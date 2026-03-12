@@ -297,11 +297,7 @@ def main(cfg: DictConfig) -> None:
     run_dir = Path(HydraConfig.get().runtime.output_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    log_path   = run_dir / "dialogue_log.jsonl"
-    tables_dir = run_dir / "tables"
-    plots_dir  = run_dir / "plots"
-    tables_dir.mkdir(exist_ok=True)
-    plots_dir.mkdir(exist_ok=True)
+    log_path = run_dir / "dialogue_log.jsonl"
 
     # --- Clients ---
     llm_client = AsyncLLMClient(
@@ -367,21 +363,24 @@ def main(cfg: DictConfig) -> None:
     )
 
     async def run_suite() -> None:
-        tasks = [
-            run_swarm_trial(
-                i,
-                payload,
-                random.sample(all_benign, min(num_benign_posts, len(all_benign))),
-                cfg,
-                llm_client,
-                sentinel,
-                moltbook,
-                jsonl_logger,
-                roster=roster,
-                tool_defense=tool_defense,
-            )
-            for i, payload in enumerate(trial_payloads)
-        ]
+        sem = asyncio.Semaphore(cfg.get("trial_concurrency", 1))
+
+        async def _gated(i: int, payload):
+            async with sem:
+                await run_swarm_trial(
+                    i,
+                    payload,
+                    random.sample(all_benign, min(num_benign_posts, len(all_benign))),
+                    cfg,
+                    llm_client,
+                    sentinel,
+                    moltbook,
+                    jsonl_logger,
+                    roster=roster,
+                    tool_defense=tool_defense,
+                )
+
+        tasks = [_gated(i, payload) for i, payload in enumerate(trial_payloads)]
         await tqdm.gather(*tasks, desc=f"[{cfg.simulation.defense}]")
         await llm_client.aclose()
 

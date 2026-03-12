@@ -80,11 +80,41 @@ def _fmt(p: Path) -> str:
     return str(p)
 
 
+def _resolve_run_dir(cfg: DictConfig) -> Path:
+    """Return the run folder to analyse.
+
+    Priority:
+      1. cfg.run_dir if explicitly set (CLI override or CLAUDE.md default)
+      2. Latest timestamped subfolder of cfg.directories.runs that contains
+         at least one dialogue_log.jsonl
+    """
+    if cfg.get("run_dir", ""):
+        p = Path(cfg.run_dir)
+        if not p.exists():
+            raise FileNotFoundError(f"run_dir '{p}' does not exist.")
+        return p
+
+    runs_root = Path(cfg.directories.runs)
+    candidates = sorted(
+        (d for d in runs_root.iterdir() if d.is_dir()),
+        key=lambda d: d.name,
+        reverse=True,
+    )
+    for candidate in candidates:
+        if list(candidate.rglob("dialogue_log.jsonl")):
+            return candidate
+
+    raise FileNotFoundError(
+        f"No run folders with dialogue_log.jsonl found under '{runs_root}'. "
+        "Run run_experiment.py first, or pass run_dir=<path> on the CLI."
+    )
+
+
 @hydra.main(version_base="1.3", config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
-    runs_dir   = Path(cfg.directories.runs)
-    tables_dir = runs_dir / "analysis" / "tables"
-    plots_dir  = runs_dir / "analysis" / "plots"
+    run_dir    = _resolve_run_dir(cfg)
+    tables_dir = run_dir / "analysis" / "tables"
+    plots_dir  = run_dir / "analysis" / "plots"
     tables_dir.mkdir(parents=True, exist_ok=True)
     plots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -93,10 +123,10 @@ def main(cfg: DictConfig) -> None:
     # ------------------------------------------------------------------ #
     # 1. Discover and load all transcripts                                 #
     # ------------------------------------------------------------------ #
-    jsonl_files = sorted(runs_dir.glob("**/dialogue_log.jsonl"))
+    jsonl_files = sorted(run_dir.glob("**/dialogue_log.jsonl"))
     if not jsonl_files:
         log.error(
-            f"No dialogue_log.jsonl files found under {runs_dir}. "
+            f"No dialogue_log.jsonl files found under {run_dir}. "
             "Run run_experiment.py first."
         )
         return
@@ -364,7 +394,7 @@ def main(cfg: DictConfig) -> None:
         except Exception as e:
             log.warning(f"Plot '{label}' failed: {e}")
 
-    print(f"\nAnalysis complete.")
+    print(f"\nAnalysis complete — run: {run_dir}")
     print(f"  Tables → {tables_dir}")
     print(f"  Plots  → {plots_dir}\n")
 
