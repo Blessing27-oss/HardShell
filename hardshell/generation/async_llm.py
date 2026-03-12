@@ -1,17 +1,34 @@
-"""Google Gemini API client with semaphore-limited concurrency and retry logic."""
+"""Multi-provider LLM client with key rotation and rate-limit-aware retry.
+
+Supports Google Gemini keys and Dartmouth Chat API keys (OpenAI-compatible).
+On a 429 the client rotates to the next key immediately — no sleep needed
+unless every key is exhausted in the same cycle.
+
+Key config is read from the environment:
+    GOOGLE_API_KEY_1 … GOOGLE_API_KEY_N   → Google Gemini
+    DARTMOUTH_API_KEY_1 … DARTMOUTH_API_KEY_N → Dartmouth Chat (OpenAI-compatible)
+    GOOGLE_API_KEY / GEMINI_API_KEY        → single-key fallback (legacy)
+"""
 import asyncio
 import json
 import logging
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+import os
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from google.genai import types
+import litellm
 from pydantic import BaseModel, ConfigDict, Field
-from tenacity import retry, stop_after_attempt, wait_exponential
 
-from hardshell.generation.llm_broker import LLMOp, LLMRequestBroker
+litellm.suppress_debug_info = True
+litellm.set_verbose = False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AsyncLLM")
+
+_DARTMOUTH_BASE_URL = "https://chat.dartmouth.edu/api"
+_DARTMOUTH_MODEL    = "openai.gpt-oss-120b"   # GPT-OSS 120b hosted on Dartmouth Chat
+_MAX_ATTEMPTS       = 30
+_FULL_CYCLE_SLEEP   = 65   # seconds — sleep only when every key is exhausted
 
 
 # ---------------------------------------------------------------------------
@@ -19,7 +36,6 @@ logger = logging.getLogger("AsyncLLM")
 # ---------------------------------------------------------------------------
 
 class JudgeLabelBatch(BaseModel):
-    """Schema for evaluating swarm ASR, TCR, and utility from an execution trace."""
     model_config = ConfigDict(extra="ignore")
 
     is_compromised: bool = Field(
@@ -38,65 +54,66 @@ class JudgeLabelBatch(BaseModel):
         )
     )
     rationale: str = Field(
+        default="",
         description="1-2 sentence explanation for the chosen labels and utility score."
     )
 
 
 # ---------------------------------------------------------------------------
-# Message format helpers
+# Per-key configuration
 # ---------------------------------------------------------------------------
 
-def _system_and_contents(
-    messages: List[Dict],
-) -> Tuple[Optional[str], List[types.Content]]:
-    """Extract system instruction and convert OpenAI-style messages to Gemini Content objects."""
-    system_instruction: Optional[str] = None
-    contents: List[types.Content] = []
-
-    for msg in messages:
-        role = msg["role"]
-
-        if role == "system":
-            system_instruction = msg.get("content") or ""
-
-        elif role == "user":
-            contents.append(
-                types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=msg.get("content") or "")],
-                )
-            )
-
-        elif role == "assistant":
-            parts: List[types.Part] = []
-            if msg.get("content"):
-                parts.append(types.Part.from_text(text=msg["content"]))
-            for tc in msg.get("tool_calls", []):
-                args = tc["function"]["arguments"]
-                if isinstance(args, str):
-                    args = json.loads(args)
-                parts.append(
-                    types.Part.from_function_call(
-                        name=tc["function"]["name"], args=args
-                    )
-                )
-            if parts:
-                contents.append(types.Content(role="model", parts=parts))
-
-    return system_instruction, contents
+@dataclass
+class LLMKeyConfig:
+    api_key:  str
+    model:    str             # LiteLLM model string
+    base_url: Optional[str]   # None = Google default; URL for Dartmouth
 
 
-def _openai_tools_to_gemini(tools: List[Dict]) -> List[types.Tool]:
-    """Convert OpenAI-style tool schemas to Gemini FunctionDeclarations."""
-    func_decls = [
-        types.FunctionDeclaration(
-            name=tool["function"]["name"],
-            description=tool["function"].get("description", ""),
-            parameters=tool["function"].get("parameters"),
+def _load_key_configs(gemini_model: str) -> List[LLMKeyConfig]:
+    """Build key config list from environment variables."""
+    configs: List[LLMKeyConfig] = []
+
+    # --- Google Gemini keys ---
+    litellm_gemini = (
+        gemini_model if gemini_model.startswith("gemini/")
+        else f"gemini/{gemini_model}"
+    )
+    for i in range(1, 9):
+        k = os.environ.get(f"GOOGLE_API_KEY_{i}")
+        if k:
+            configs.append(LLMKeyConfig(api_key=k, model=litellm_gemini, base_url=None))
+
+    # Legacy single Google key (used when no numbered keys are set)
+    if not any(c.base_url is None for c in configs):
+        k = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        if k:
+            configs.append(LLMKeyConfig(api_key=k, model=litellm_gemini, base_url=None))
+
+    # --- Dartmouth Chat keys (GPT-OSS 120b) ---
+    litellm_dartmouth = f"openai/{_DARTMOUTH_MODEL}"
+    for i in range(1, 9):
+        k = os.environ.get(f"DARTMOUTH_API_KEY_{i}")
+        if k:
+            configs.append(LLMKeyConfig(
+                api_key=k,
+                model=litellm_dartmouth,
+                base_url=_DARTMOUTH_BASE_URL,
+            ))
+
+    if not configs:
+        raise RuntimeError(
+            "No API keys found. Set GOOGLE_API_KEY or DARTMOUTH_API_KEY_1…N in .env"
         )
-        for tool in tools
-    ]
-    return [types.Tool(function_declarations=func_decls)]
+
+    logger.info(
+        f"Loaded {len(configs)} API key(s): "
+        + ", ".join(
+            f"{'Dartmouth' if c.base_url else 'Gemini'}({c.model})"
+            for c in configs
+        )
+    )
+    return configs
 
 
 # ---------------------------------------------------------------------------
@@ -104,76 +121,95 @@ def _openai_tools_to_gemini(tools: List[Dict]) -> List[types.Tool]:
 # ---------------------------------------------------------------------------
 
 class AsyncLLMClient:
-    """Async Gemini API client backed by a central LLMRequestBroker.
+    """Async multi-provider LLM client with key rotation and rate-limit-aware retry.
 
-    All Gemini calls (agent turns, sanitisation, LLM-as-judge) are funneled
-    through the shared broker, which handles concurrency and rate limiting
-    across multiple API keys.
+    On a 429 the next key is tried immediately (no sleep).
+    Only when all keys are exhausted in one full cycle does the client sleep.
+    The semaphore is held throughout — including any sleep — so no other
+    coroutine can consume quota while we are recovering.
     """
 
-    def __init__(
-        self,
-        model: str = "gemini-2.5-lite",
-        max_concurrency: int = 50,
-    ):
-        self.model = model
-        # max_concurrency is interpreted as the global concurrency cap in the broker
-        self._broker = LLMRequestBroker.from_env(
-            model=model, global_max_concurrency=max_concurrency
-        )
+    def __init__(self, model: str = "gemini-2.5-flash-lite", max_concurrency: int = 1):
+        self._keys = _load_key_configs(gemini_model=model)
+        self._key_index = 0
+        self.semaphore = asyncio.Semaphore(max_concurrency)
+
+    @property
+    def _current(self) -> LLMKeyConfig:
+        return self._keys[self._key_index % len(self._keys)]
+
+    def _rotate(self) -> None:
+        self._key_index += 1
+        idx = self._key_index % len(self._keys)
+        cfg = self._keys[idx]
+        provider = "Dartmouth" if cfg.base_url else "Gemini"
+        logger.warning(f"Rotated to key {idx + 1}/{len(self._keys)} ({provider})")
 
     async def astart(self) -> None:
-        """Start the shared broker workers (idempotent)."""
-        await self._broker.start()
+        pass  # LiteLLM has no broker to start; method exists for API compatibility
 
     async def aclose(self) -> None:
-        """Close the shared broker and underlying HTTP pools."""
-        await self._broker.close()
+        pass  # LiteLLM manages its own connection pool
 
-    @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True,
-    )
+    async def _call_api(self, fn: Callable[[LLMKeyConfig], Awaitable[Any]]) -> Any:
+        """Run fn(cfg) inside the semaphore with key-rotation on 429.
+
+        Semaphore is held during retry sleeps so no other coroutine burns quota.
+        """
+        n = len(self._keys)
+        async with self.semaphore:
+            for attempt in range(_MAX_ATTEMPTS):
+                try:
+                    return await fn(self._current)
+                except Exception as e:
+                    is_rate_limit = (
+                        "429" in str(e)
+                        or "RESOURCE_EXHAUSTED" in str(e)
+                        or "RateLimitError" in type(e).__name__
+                    )
+                    if not is_rate_limit:
+                        raise
+                    self._rotate()
+                    if (attempt + 1) % n == 0:
+                        logger.warning(
+                            f"All {n} key(s) exhausted — sleeping {_FULL_CYCLE_SLEEP}s…"
+                        )
+                        await asyncio.sleep(_FULL_CYCLE_SLEEP)
+            raise RuntimeError(f"API call failed after {_MAX_ATTEMPTS} attempts.")
+
     async def generate_text(
         self, messages: List[Dict], temperature: float = 0.0
     ) -> str:
-        """Free-form text generation for agent messages and sanitisation."""
-        try:
-            system, contents = _system_and_contents(messages)
-            response = await self._broker.submit(
-                LLMOp.GENERATE_TEXT,
-                {"system": system, "contents": contents, "temperature": temperature},
+        """Free-form text generation."""
+        async def _call(cfg: LLMKeyConfig) -> str:
+            resp = await litellm.acompletion(
+                model=cfg.model,
+                messages=messages,
+                api_key=cfg.api_key,
+                api_base=cfg.base_url,
+                temperature=temperature,
             )
-            return response.text or ""
-        except Exception as e:
-            logger.warning(f"generate_text failed, retrying… {e}")
-            raise
+            return resp.choices[0].message.content or ""
 
-    @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True,
-    )
+        return await self._call_api(_call)
+
     async def evaluate_trace(
         self, messages: List[Dict], temperature: float = 0.0
     ) -> JudgeLabelBatch:
-        """Forces the LLM to emit the strict JudgeLabelBatch JSON schema."""
-        try:
-            system, contents = _system_and_contents(messages)
-            response = await self._broker.submit(
-                LLMOp.EVALUATE_TRACE,
-                {
-                    "system": system,
-                    "contents": contents,
-                    "temperature": temperature,
-                    "schema": JudgeLabelBatch,
-                },
+        """Structured judge evaluation via JSON response format."""
+        async def _call(cfg: LLMKeyConfig) -> JudgeLabelBatch:
+            resp = await litellm.acompletion(
+                model=cfg.model,
+                messages=messages,
+                api_key=cfg.api_key,
+                api_base=cfg.base_url,
+                temperature=temperature,
+                response_format={"type": "json_object"},
             )
-            return JudgeLabelBatch.model_validate_json(response.text)
-        except Exception as e:
-            logger.warning(f"evaluate_trace failed, retrying… {e}")
-            raise
+            raw = resp.choices[0].message.content or "{}"
+            return JudgeLabelBatch.model_validate_json(raw)
+
+        return await self._call_api(_call)
 
     async def run_tool_loop(
         self,
@@ -182,60 +218,42 @@ class AsyncLLMClient:
         dispatch: Callable[[str, dict], Awaitable[str]],
         max_iterations: int = 5,
         temperature: float = 0.0,
-    ) -> List[types.Content]:
-        """
-        Runs a Gemini-native agentic tool-use loop until the model stops
-        calling tools or max_iterations is reached.
-
-        Args:
-            messages:       Initial message history (OpenAI-style dicts).
-            tools:          OpenAI-compatible tool schema list.
-            dispatch:       async (tool_name, tool_args) -> JSON string result.
-            max_iterations: Hard cap on loop turns.
-            temperature:    Forwarded to each completion call.
-
-        Returns:
-            Final conversation history as a list of Gemini Content objects.
-        """
-        system_instruction, history = _system_and_contents(messages)
-        gemini_tools = _openai_tools_to_gemini(tools)
+    ) -> List[Dict]:
+        """Agentic tool-use loop using standard OpenAI-style tool calling."""
+        history = list(messages)
 
         for _ in range(max_iterations):
-            response = await self._broker.submit(
-                LLMOp.TOOL_LOOP_STEP,
-                {
-                    "system": system_instruction,
-                    "contents": history,
-                    "tools": gemini_tools,
-                    "temperature": temperature,
-                },
-            )
-
-            model_content = response.candidates[0].content
-            if model_content is None:
-                break
-            history.append(model_content)
-
-            func_calls = [
-                part.function_call
-                for part in (model_content.parts or [])
-                if part.function_call
-            ]
-
-            if not func_calls:
-                break
-
-            response_parts: List[types.Part] = []
-            for fc in func_calls:
-                args = dict(fc.args) if fc.args else {}
-                result = await dispatch(fc.name, args)
-                response_parts.append(
-                    types.Part.from_function_response(
-                        name=fc.name,
-                        response={"result": result},
-                    )
+            async def _call(cfg: LLMKeyConfig, h=list(history)):
+                return await litellm.acompletion(
+                    model=cfg.model,
+                    messages=h,
+                    tools=tools,
+                    tool_choice="auto",
+                    api_key=cfg.api_key,
+                    api_base=cfg.base_url,
+                    temperature=temperature,
                 )
 
-            history.append(types.Content(role="user", parts=response_parts))
+            response = await self._call_api(_call)
+            msg = response.choices[0].message
+
+            history.append(msg.model_dump(exclude_none=True))
+
+            tool_calls = msg.tool_calls or []
+            if not tool_calls:
+                break
+
+            for tc in tool_calls:
+                args = (
+                    json.loads(tc.function.arguments)
+                    if isinstance(tc.function.arguments, str)
+                    else tc.function.arguments
+                )
+                result = await dispatch(tc.function.name, args)
+                history.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
 
         return history
