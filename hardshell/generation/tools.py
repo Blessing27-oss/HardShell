@@ -485,7 +485,12 @@ class LiveToolExecutor:
         # ── get_feed ────────────────────────────────────────────────────
         if tool_name == "get_feed":
             submolt = tool_args.get("submolt")
-            posts = self._client.read_timeline(submolt=submolt)
+            # Personalized feed by default; submolt-specific feed when provided.
+            posts = self._client.read_timeline(
+                agent_id=self._agent_id,
+                submolt=submolt,
+                personalized=not bool(submolt),
+            )
             if self._firewall.screen_on_read():
                 screened = []
                 for post in posts:

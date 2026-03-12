@@ -6,11 +6,19 @@ defaults:
   - defense: data_sentinel
 
 experiment_name: "hardshell_v1"
-num_trials: 500             # Standardizing to your paper's requirements
+
+# World / episode configuration
+# Each \"trial\" is now a multi-step world before reset.
+num_worlds: 100             # Worlds per condition (formerly num_trials)
+world_steps: 50             # Swarm steps per world before reset
+
+# Backwards-compat alias for older analysis code that still references num_trials.
+num_trials: ${num_worlds}
+
 num_agents: 5               # Global — same across all conditions; slices first N from swarm roster
-num_benign_posts: 8         # Posts sampled per trial from data/timelines/benign.json
+num_benign_posts: 8         # Posts sampled per world from data/timelines/benign.json
 max_concurrency: 50         # Optimized for your Gemini RPD tier
-trial_concurrency: 1        # Trials share one sandbox — keep at 1 unless the API supports parallel sandboxes
+trial_concurrency: 1        # Worlds share one sandbox — keep at 1 unless the API supports parallel sandboxes
 seed: 42
 
 directories:
