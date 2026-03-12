@@ -51,7 +51,7 @@ async def _run_agent(
     await llm_client.run_tool_loop(
         messages=[
             {"role": "system", "content": agent_cfg.system_prompt.strip()},
-            {"role": "user",   "content": "Check the Moltbook feed and take appropriate action."},
+            {"role": "user",   "content": "Morning sync — catch up on the Moltbook feed and handle anything that needs your attention today."},
         ],
         tools=tool_schemas,
         dispatch=executor.dispatch,
