@@ -2,13 +2,13 @@
 import asyncio
 import json
 import logging
-import os
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
-from google import genai
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+from hardshell.generation.llm_broker import LLMOp, LLMRequestBroker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AsyncLLM")
@@ -104,7 +104,12 @@ def _openai_tools_to_gemini(tools: List[Dict]) -> List[types.Tool]:
 # ---------------------------------------------------------------------------
 
 class AsyncLLMClient:
-    """Async Gemini API client with concurrency limiting and retry logic."""
+    """Async Gemini API client backed by a central LLMRequestBroker.
+
+    All Gemini calls (agent turns, sanitisation, LLM-as-judge) are funneled
+    through the shared broker, which handles concurrency and rate limiting
+    across multiple API keys.
+    """
 
     def __init__(
         self,
@@ -112,13 +117,18 @@ class AsyncLLMClient:
         max_concurrency: int = 50,
     ):
         self.model = model
-        self.semaphore = asyncio.Semaphore(max_concurrency)
-        api_key = os.environ.get("GOOGLE_API_KEY") or os.environ["GEMINI_API_KEY"]
-        self._client = genai.Client(api_key=api_key)
+        # max_concurrency is interpreted as the global concurrency cap in the broker
+        self._broker = LLMRequestBroker.from_env(
+            model=model, global_max_concurrency=max_concurrency
+        )
+
+    async def astart(self) -> None:
+        """Start the shared broker workers (idempotent)."""
+        await self._broker.start()
 
     async def aclose(self) -> None:
-        """Close the underlying httpx connection pool before the event loop shuts down."""
-        await self._client._api_client.aclose()
+        """Close the shared broker and underlying HTTP pools."""
+        await self._broker.close()
 
     @retry(
         stop=stop_after_attempt(5),
@@ -129,21 +139,16 @@ class AsyncLLMClient:
         self, messages: List[Dict], temperature: float = 0.0
     ) -> str:
         """Free-form text generation for agent messages and sanitisation."""
-        async with self.semaphore:
-            try:
-                system, contents = _system_and_contents(messages)
-                response = await self._client.aio.models.generate_content(
-                    model=self.model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system,
-                        temperature=temperature,
-                    ),
-                )
-                return response.text or ""
-            except Exception as e:
-                logger.warning(f"generate_text failed, retrying… {e}")
-                raise
+        try:
+            system, contents = _system_and_contents(messages)
+            response = await self._broker.submit(
+                LLMOp.GENERATE_TEXT,
+                {"system": system, "contents": contents, "temperature": temperature},
+            )
+            return response.text or ""
+        except Exception as e:
+            logger.warning(f"generate_text failed, retrying… {e}")
+            raise
 
     @retry(
         stop=stop_after_attempt(5),
@@ -154,23 +159,21 @@ class AsyncLLMClient:
         self, messages: List[Dict], temperature: float = 0.0
     ) -> JudgeLabelBatch:
         """Forces the LLM to emit the strict JudgeLabelBatch JSON schema."""
-        async with self.semaphore:
-            try:
-                system, contents = _system_and_contents(messages)
-                response = await self._client.aio.models.generate_content(
-                    model=self.model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system,
-                        temperature=temperature,
-                        response_mime_type="application/json",
-                        response_schema=JudgeLabelBatch,
-                    ),
-                )
-                return JudgeLabelBatch.model_validate_json(response.text)
-            except Exception as e:
-                logger.warning(f"evaluate_trace failed, retrying… {e}")
-                raise
+        try:
+            system, contents = _system_and_contents(messages)
+            response = await self._broker.submit(
+                LLMOp.EVALUATE_TRACE,
+                {
+                    "system": system,
+                    "contents": contents,
+                    "temperature": temperature,
+                    "schema": JudgeLabelBatch,
+                },
+            )
+            return JudgeLabelBatch.model_validate_json(response.text)
+        except Exception as e:
+            logger.warning(f"evaluate_trace failed, retrying… {e}")
+            raise
 
     async def run_tool_loop(
         self,
@@ -198,16 +201,15 @@ class AsyncLLMClient:
         gemini_tools = _openai_tools_to_gemini(tools)
 
         for _ in range(max_iterations):
-            async with self.semaphore:
-                response = await self._client.aio.models.generate_content(
-                    model=self.model,
-                    contents=history,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        tools=gemini_tools,
-                        temperature=temperature,
-                    ),
-                )
+            response = await self._broker.submit(
+                LLMOp.TOOL_LOOP_STEP,
+                {
+                    "system": system_instruction,
+                    "contents": history,
+                    "tools": gemini_tools,
+                    "temperature": temperature,
+                },
+            )
 
             model_content = response.candidates[0].content
             if model_content is None:

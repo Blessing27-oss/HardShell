@@ -365,6 +365,9 @@ def main(cfg: DictConfig) -> None:
     async def run_suite() -> None:
         sem = asyncio.Semaphore(cfg.get("trial_concurrency", 1))
 
+        # Ensure the shared LLM broker is running before any trials submit requests.
+        await llm_client.astart()
+
         async def _gated(i: int, payload):
             async with sem:
                 await run_swarm_trial(
