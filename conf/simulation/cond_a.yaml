@@ -1,0 +1,10 @@
+# Condition A: No attack, no tool_defense
+# Establishes unperturbed swarm utility — the ceiling for task_completed and utility_score.
+# ASR is always 0 here (no payload injected); utility is the clean baseline.
+condition: "cond_a"
+defense: none
+tool_defense: false
+inject_payload: false
+firewalls: []
+data_num: 50
+seed: 42

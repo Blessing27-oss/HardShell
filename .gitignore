@@ -2,6 +2,7 @@
 logs/
 outputs/
 multirun/
+runs/
 
 # Python
 __pycache__/
@@ -15,3 +16,5 @@ artifacts/tables/*.tex
 artifacts/tables/*.csv
 artifacts/plots/*.pdf
 artifacts/plots/*.png
+
+.DS_Store

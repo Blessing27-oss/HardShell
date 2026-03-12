@@ -1,0 +1,11 @@
+# Condition B: Attack, no tool_defense
+# Raw attack success rate with no mitigation.
+# Measures how effectively InjecAgent payloads compromise swarm agents
+# when no DataSentinel screening is in place anywhere.
+condition: "cond_b"
+defense: none
+tool_defense: false
+inject_payload: true
+firewalls: []
+data_num: 50
+seed: 42

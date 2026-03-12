@@ -1,0 +1,11 @@
+# Condition D: Attack present, tool_defense active
+# Measures defense effectiveness: ASR reduction vs cond_b.
+# The interaction term attack*tool_defense in the factorial regression
+# captures how much of the attack the defense absorbs.
+condition: "cond_d"
+defense: tool_defense
+tool_defense: true
+inject_payload: true
+firewalls: []
+data_num: 50
+seed: 42

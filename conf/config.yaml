@@ -8,7 +8,9 @@ defaults:
 experiment_name: "hardshell_v1"
 num_trials: 500             # Standardizing to your paper's requirements
 num_agents: 5               # Global — same across all conditions; slices first N from swarm roster
+num_benign_posts: 8         # Posts sampled per trial from data/timelines/benign.json
 max_concurrency: 50         # Optimized for your Gemini RPD tier
+trial_concurrency: 1        # Trials share one sandbox — keep at 1 unless the API supports parallel sandboxes
 seed: 42
 
 directories:
@@ -16,11 +18,16 @@ directories:
   timelines: "data/timelines"
   runs: "runs"   # root for all per-run output folders
 
+# Used by run_analysis.py to scope discovery + output to a specific run folder.
+# Leave empty to auto-detect the latest timestamped folder under directories.runs.
+# Override on the CLI: python run_analysis.py run_dir=runs/2026-03-11_14-30-00
+run_dir: ""
+
 hydra:
   run:
-    dir: runs/condition_${simulation.condition}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: runs/${now:%Y-%m-%d_%H-%M-%S}/condition_${simulation.condition}
   sweep:
-    dir: runs/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    dir: runs/${now:%Y-%m-%d_%H-%M-%S}
     subdir: condition_${simulation.condition}
 
 llm:
