@@ -145,6 +145,9 @@ class AsyncLLMClient:
         provider = "Dartmouth" if cfg.base_url else "Gemini"
         logger.warning(f"Rotated to key {idx + 1}/{len(self._keys)} ({provider})")
 
+    async def astart(self) -> None:
+        pass  # LiteLLM has no broker to start; method exists for API compatibility
+
     async def aclose(self) -> None:
         pass  # LiteLLM manages its own connection pool
 
