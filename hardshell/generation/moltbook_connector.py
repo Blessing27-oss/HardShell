@@ -207,6 +207,17 @@ class MoltbookAPIClient:
                 # Best-effort; missing submolts should not break the world.
                 continue
 
+    def get_agent_karma(self, agent_id: str) -> int:
+        """Return the Moltbook karma for a given agent (best-effort)."""
+        headers = self._get_agent_headers(agent_id)
+        url = f"{self._api_url}/agents/me"
+        try:
+            resp = self._get_with_retry(url, headers=headers)
+            data = resp.json().get("agent", resp.json())
+            return int(data.get("karma", 0) or 0)
+        except Exception:
+            return 0
+
     # ------------------------------------------------------------------
     # Experimental email + search helpers via sandbox (non-Moltbook core)
     # ------------------------------------------------------------------

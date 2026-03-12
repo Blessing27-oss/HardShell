@@ -1,0 +1,16 @@
+# Condition F: Attack, swarm_defense on output only (all agents)
+# Swarm-level defense screens posts/emails before they are written (on_write).
+condition: "cond_f"
+defense: swarm_out_all
+tool_defense: false
+inject_payload: true
+
+swarm_defense:
+  mode: out
+  targeting:
+    strategy: all
+
+firewalls: []
+data_num: 50
+seed: 42
+

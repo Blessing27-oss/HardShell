@@ -174,9 +174,6 @@ async def run_swarm_trial(
     """
     if roster is None:
         roster = list(cfg.swarm.agents)[: cfg.num_agents]
-    firewall_rules: list[dict] = OmegaConf.to_container(
-        cfg.simulation.get("firewalls", []), resolve=True
-    )
     inject = payload is not None
     world_steps: int = cfg.get("world_steps", 1)
 
@@ -191,6 +188,9 @@ async def run_swarm_trial(
         "attack_type":      payload.get("attack_type", "") if inject else None,
         "payload_position": None,
         "world_steps":      world_steps,
+        "swarm_mode":       "none",
+        "swarm_targeting_strategy": "none",
+        "swarm_coverage":   0.0,
         "agent_results":    [],
     }
 
@@ -234,6 +234,54 @@ async def run_swarm_trial(
             except Exception:
                 # Subscriptions are best-effort; failures should not abort the world.
                 continue
+
+    # Step 2c: Configure swarm_defense (firewalls) for this world
+    base_firewalls: list[dict] = OmegaConf.to_container(
+        cfg.simulation.get("firewalls", []), resolve=True
+    )
+    firewall_rules: list[dict] = list(base_firewalls)
+
+    swarm_def_cfg = cfg.simulation.get("swarm_defense", None)
+    swarm_mode = "none"
+    swarm_targeting_strategy = "none"
+    swarm_coverage = 0.0
+
+    if swarm_def_cfg is not None:
+        swarm_mode = str(swarm_def_cfg.get("mode", "none"))
+        targeting = swarm_def_cfg.get("targeting", {})
+        swarm_targeting_strategy = str(targeting.get("strategy", "all" if swarm_mode != "none" else "none"))
+
+        # Determine which agents are covered by swarm_defense in this world
+        covered_ids: list[str] = []
+        agent_ids = [a.id for a in roster]  # type: ignore[union-attr]
+
+        if swarm_mode != "none":
+            if swarm_targeting_strategy == "all":
+                covered_ids = agent_ids
+            elif swarm_targeting_strategy == "random":
+                p = float(targeting.get("p", 0.0))
+                covered_ids = [aid for aid in agent_ids if random.random() < p]
+            elif swarm_targeting_strategy == "karma":
+                threshold = int(targeting.get("karma_threshold", 1000))
+                for aid in agent_ids:
+                    karma = moltbook.get_agent_karma(aid)
+                    if karma < threshold:
+                        covered_ids.append(aid)
+
+            if covered_ids:
+                swarm_coverage = len(covered_ids) / max(len(agent_ids), 1)
+
+                agents_field: "list[str] | str"
+                agents_field = "all" if len(covered_ids) == len(agent_ids) else covered_ids
+
+                if swarm_mode in ("in", "io"):
+                    firewall_rules.append({"position": "on_read", "agents": agents_field})
+                if swarm_mode in ("out", "io"):
+                    firewall_rules.append({"position": "on_write", "agents": agents_field})
+
+    trial_log["swarm_mode"] = swarm_mode
+    trial_log["swarm_targeting_strategy"] = swarm_targeting_strategy
+    trial_log["swarm_coverage"] = swarm_coverage
 
     # Step 3: Run all N agents across multiple steps in the same world
     # Aggregate per-agent metrics across steps so the JSONL shape stays

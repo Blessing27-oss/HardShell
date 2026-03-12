@@ -1,0 +1,16 @@
+# Condition H: Attack, swarm_defense I/O for all agents + tool_defense
+# Full architecture: tool_defense (tool boundary) + swarm_defense (Moltbook boundary).
+condition: "cond_h"
+defense: swarm_io_all_tooldef
+tool_defense: true
+inject_payload: true
+
+swarm_defense:
+  mode: io
+  targeting:
+    strategy: all
+
+firewalls: []
+data_num: 50
+seed: 42
+

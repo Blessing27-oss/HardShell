@@ -1,0 +1,17 @@
+# Condition swarm_io_random_p50: Attack, swarm_defense I/O with random 50% coverage
+# Each agent independently has swarm_defense (on_read + on_write) with probability p=0.5.
+condition: "swarm_io_random_p50"
+defense: swarm_io_random_p50
+tool_defense: false
+inject_payload: true
+
+swarm_defense:
+  mode: io
+  targeting:
+    strategy: random
+    p: 0.5
+
+firewalls: []
+data_num: 50
+seed: 42
+

@@ -831,3 +831,98 @@ def plot_tool_defense_blocks(df_agents: pd.DataFrame, save_path: str) -> None:
     ax.set_title("Tool Defense Block Rate by Agent", fontsize=12, fontweight="bold")
     plt.xticks(rotation=30, ha="right", fontsize=8)
     _savefig(fig, save_path)
+
+
+# ---------------------------------------------------------------------------
+# 16 — ASR / Utility vs swarm_coverage
+# ---------------------------------------------------------------------------
+
+def plot_asr_vs_coverage(df_trials: pd.DataFrame, save_path: str) -> None:
+    """Scatter: ASR vs swarm_coverage (defense coverage fraction)."""
+    if "swarm_coverage" not in df_trials.columns:
+        return
+    plt.style.use(_STYLE)
+    df = df_trials[
+        (df_trials["inject_payload"].astype(int) == 1)
+        & (df_trials["target_execution_asr"].fillna(-1) >= 0)
+    ].copy()
+    if df.empty:
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    colors = _cond_colors(sorted(df["condition"].unique()))
+    cmap   = dict(zip(sorted(df["condition"].unique()), colors))
+
+    for cond in sorted(df["condition"].unique()):
+        sub = df[df["condition"] == cond]
+        ax.scatter(sub["swarm_coverage"], sub["target_execution_asr"],
+                   color=cmap[cond], alpha=0.6, s=25, label=cond)
+
+    ax.set_xlabel("Swarm Defense Coverage (fraction of agents)", fontsize=11)
+    ax.set_ylabel("Attack Success Rate (ASR)", fontsize=11)
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
+    ax.yaxis.grid(True, linestyle="--", alpha=0.4)
+    ax.set_axisbelow(True)
+    ax.legend(fontsize=9, title="Condition", framealpha=0.85)
+    ax.set_title("ASR vs Swarm Defense Coverage", fontsize=12, fontweight="bold")
+    _savefig(fig, save_path)
+
+
+def plot_utility_vs_coverage(df_trials: pd.DataFrame, save_path: str) -> None:
+    """Scatter: utility_score vs swarm_coverage."""
+    if "swarm_coverage" not in df_trials.columns:
+        return
+    plt.style.use(_STYLE)
+    df = df_trials[df_trials["utility_score"].fillna(-1) >= 0].copy()
+    if df.empty:
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    colors = _cond_colors(sorted(df["condition"].unique()))
+    cmap   = dict(zip(sorted(df["condition"].unique()), colors))
+
+    for cond in sorted(df["condition"].unique()):
+        sub = df[df["condition"] == cond]
+        ax.scatter(sub["swarm_coverage"], sub["utility_score"],
+                   color=cmap[cond], alpha=0.6, s=25, label=cond)
+
+    ax.set_xlabel("Swarm Defense Coverage (fraction of agents)", fontsize=11)
+    ax.set_ylabel("Task Utility Score", fontsize=11)
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
+    ax.yaxis.grid(True, linestyle="--", alpha=0.4)
+    ax.set_axisbelow(True)
+    ax.legend(fontsize=9, title="Condition", framealpha=0.85)
+    ax.set_title("Utility vs Swarm Defense Coverage", fontsize=12, fontweight="bold")
+    _savefig(fig, save_path)
+
+
+def plot_propagation_rate(df_trials: pd.DataFrame, save_path: str) -> None:
+    """Bar: rate of propagation cases (local_asr_direct=0, global_asr_judge=1) by defense architecture."""
+    if "propagation_case" not in df_trials.columns or "swarm_mode" not in df_trials.columns:
+        return
+    plt.style.use(_STYLE)
+    df = df_trials.copy()
+    df["tool_defense_flag"] = df.get("tool_defense", 0).astype(int)
+    df["defense_arch"] = df["tool_defense_flag"].astype(str) + "_" + df["swarm_mode"].astype(str)
+
+    agg = (
+        df.groupby("defense_arch")["propagation_case"]
+        .mean()
+        .reset_index()
+        .sort_values("propagation_case", ascending=False)
+    )
+    if agg.empty:
+        return
+
+    fig, ax = plt.subplots(figsize=(max(6, len(agg) * 1.2), 4))
+    ax.bar(agg["defense_arch"], agg["propagation_case"], color=_PALETTE[1], alpha=0.85)
+    ax.set_ylabel("Propagation Case Rate", fontsize=11)
+    ax.set_xlabel("Defense Architecture (tool_defense_flag_swarm_mode)", fontsize=9)
+    ax.set_ylim(0, min(1.05, max(agg["propagation_case"]) * 1.2))
+    ax.yaxis.grid(True, linestyle="--", alpha=0.4)
+    ax.set_axisbelow(True)
+    ax.set_xticklabels(agg["defense_arch"], rotation=25, ha="right", fontsize=9)
+    ax.set_title("Swarm-level Propagation Rate by Defense Architecture", fontsize=12, fontweight="bold")
+    _savefig(fig, save_path)

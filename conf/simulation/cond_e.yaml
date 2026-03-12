@@ -1,0 +1,17 @@
+# Condition E: Attack, swarm_defense on input only (all agents)
+# Swarm-level defense screens the Moltbook feed before agents read it (on_read).
+condition: "cond_e"
+defense: swarm_in_all
+tool_defense: false
+inject_payload: true
+
+# Swarm defense configuration — interpreted by run_experiment.py
+swarm_defense:
+  mode: in          # I/O ablation: in | out | io | none
+  targeting:
+    strategy: all   # Phase 1: all agents covered
+
+firewalls: []       # Firewalls are constructed dynamically from swarm_defense
+data_num: 50
+seed: 42
+

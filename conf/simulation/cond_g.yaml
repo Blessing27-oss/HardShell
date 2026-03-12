@@ -1,0 +1,16 @@
+# Condition G: Attack, swarm_defense on input+output (I/O) for all agents
+# Pure swarm_defense architecture (no tool_defense).
+condition: "cond_g"
+defense: swarm_io_all
+tool_defense: false
+inject_payload: true
+
+swarm_defense:
+  mode: io
+  targeting:
+    strategy: all
+
+firewalls: []
+data_num: 50
+seed: 42
+

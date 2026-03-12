@@ -65,6 +65,58 @@ def factorial_regression(df: pd.DataFrame) -> tuple:
     return utility_model, asr_model
 
 
+def swarm_architecture_regressions(df: pd.DataFrame):
+    """OLS regressions for swarm defense architectures.
+
+    Builds a categorical defense_arch from (tool_defense, swarm_mode) and fits:
+        utility_score        ~ C(defense_arch)
+        target_execution_asr ~ C(defense_arch)
+    """
+    df = df.copy()
+    if "swarm_mode" not in df.columns:
+        raise ValueError("swarm_mode column missing from df_trials")
+
+    df["tool_defense_flag"] = df.get("tool_defense", 0).astype(int)
+    df["defense_arch"] = df["tool_defense_flag"].astype(str) + "_" + df["swarm_mode"].astype(str)
+
+    valid_utility = df[df["utility_score"] >= 0].copy()
+    valid_asr     = df[df["target_execution_asr"] >= 0].copy()
+
+    util_model = smf.ols("utility_score ~ C(defense_arch)", data=valid_utility).fit()
+    asr_model  = smf.ols("target_execution_asr ~ C(defense_arch)", data=valid_asr).fit()
+
+    return util_model, asr_model
+
+
+def coverage_regression(df: pd.DataFrame):
+    """OLS regressions for ASR/utility vs swarm_defense coverage.
+
+    Models:
+        target_execution_asr ~ swarm_coverage + tool_defense + C(swarm_mode)
+        utility_score        ~ swarm_coverage + tool_defense + C(swarm_mode)
+    """
+    df = df.copy()
+    if "swarm_coverage" not in df.columns:
+        raise ValueError("swarm_coverage column missing from df_trials")
+
+    df["tool_defense_flag"] = df.get("tool_defense", 0).astype(int)
+
+    valid_utility = df[df["utility_score"] >= 0].copy()
+    valid_asr     = df[df["target_execution_asr"] >= 0].copy()
+
+    util_model = smf.ols(
+        "utility_score ~ swarm_coverage + tool_defense_flag + C(swarm_mode)",
+        data=valid_utility,
+    ).fit()
+
+    asr_model = smf.ols(
+        "target_execution_asr ~ swarm_coverage + tool_defense_flag + C(swarm_mode)",
+        data=valid_asr,
+    ).fit()
+
+    return util_model, asr_model
+
+
 def format_factorial_results(utility_model, asr_model) -> str:
     """Format both factorial regression results as a readable text summary."""
     sep = "=" * 60

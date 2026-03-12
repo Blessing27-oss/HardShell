@@ -1,0 +1,17 @@
+# Condition swarm_io_karma_low: Attack, swarm_defense I/O on low-karma agents only
+# Agents with Moltbook karma below the configured threshold receive swarm_defense.
+condition: "swarm_io_karma_low"
+defense: swarm_io_karma_low
+tool_defense: false
+inject_payload: true
+
+swarm_defense:
+  mode: io
+  targeting:
+    strategy: karma
+    karma_threshold: 1000
+
+firewalls: []
+data_num: 50
+seed: 42
+
