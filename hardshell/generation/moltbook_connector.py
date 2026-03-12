@@ -6,6 +6,7 @@ import time
 from typing import Dict, List, Optional
 
 import requests
+from requests.exceptions import HTTPError
 
 
 class MoltbookAPIClient:
@@ -15,7 +16,7 @@ class MoltbookAPIClient:
     Agents use real authenticated Moltbook endpoints (/posts, /feed, /submolts, /agents).
     """
 
-    def __init__(self):
+    def __init__(self, namespace: Optional[str] = None):
         base = os.environ.get("MOLTBOOK_API_URL", "http://127.0.0.1:3000/api/v1").rstrip("/")
         # Real API base (e.g. http://127.0.0.1:3000/api/v1)
         self._api_url = base
@@ -28,6 +29,9 @@ class MoltbookAPIClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
         }
+
+        # Optional namespace to make agent names unique per run (e.g. run_id)
+        self._namespace = namespace or os.environ.get("MOLTBOOK_AGENT_NAMESPACE", "").strip() or None
 
         # Per-agent Moltbook API keys (for real endpoints)
         self._agent_tokens: Dict[str, str] = {}
@@ -85,18 +89,30 @@ class MoltbookAPIClient:
     def _register_agent(self, agent_id: str) -> None:
         """Register a Moltbook agent for the given HardShell agent id."""
         url = f"{self._api_url}/agents/register"
-        # Name must be unique; we reuse the HardShell agent id.
-        payload = {
-            "name": agent_id,
-            "description": f"HardShell experimental agent {agent_id}",
-        }
-        resp = self._post_with_retry(url, json=payload)
-        data = resp.json()
-        agent = data.get("agent") or {}
-        api_key = agent.get("api_key")
-        if not api_key:
-            raise RuntimeError(f"Failed to register Moltbook agent for {agent_id}: {data}")
-        self._agent_tokens[agent_id] = api_key
+        # Name must be unique; use an optional namespace (per run) plus the
+        # HardShell agent id. On 409 we fall back to suffixed variants so
+        # repeated runs don't collide even if the namespace is reused.
+        base_name = f"{self._namespace}_{agent_id}" if self._namespace else agent_id
+        for attempt in range(3):
+            name = base_name if attempt == 0 else f"{base_name}_{int(time.time())}_{attempt}"
+            payload = {
+                "name": name,
+                "description": f"HardShell experimental agent {agent_id}",
+            }
+            try:
+                resp = self._post_with_retry(url, json=payload)
+                data = resp.json()
+                agent = data.get("agent") or {}
+                api_key = agent.get("api_key")
+                if not api_key:
+                    raise RuntimeError(f"Failed to register Moltbook agent for {agent_id}: {data}")
+                self._agent_tokens[agent_id] = api_key
+                return
+            except HTTPError as e:
+                if e.response is not None and e.response.status_code == 409 and attempt < 2:
+                    # Name collision; try again with a new unique suffix.
+                    continue
+                raise
 
     # ------------------------------------------------------------------
     # Harness-side methods (world reset + seeding via sandbox)
@@ -136,17 +152,31 @@ class MoltbookAPIClient:
         if not personalized and submolt:
             params["submolt"] = submolt
 
+        # Prefer personalized /feed for realism, but some local Moltbook
+        # deployments have SQL issues in getPersonalizedFeed. If /feed fails
+        # with a 500, fall back to the global /posts feed so experiments still
+        # run end-to-end.
         if personalized and not submolt:
-            # Personalized home feed
             url = f"{self._api_url}/feed"
         elif submolt:
-            # Submolt-specific feed
             url = f"{self._api_url}/submolts/{submolt}/feed"
         else:
-            # Global posts feed
             url = f"{self._api_url}/posts"
 
-        resp = self._get_with_retry(url, headers=headers, params=params)
+        try:
+            resp = self._get_with_retry(url, headers=headers, params=params)
+        except HTTPError as e:
+            if (
+                personalized
+                and not submolt
+                and e.response is not None
+                and e.response.status_code == 500
+            ):
+                # Fallback to global posts feed when personalized feed fails.
+                fallback_url = f"{self._api_url}/posts"
+                resp = self._get_with_retry(fallback_url, headers=headers, params=params)
+            else:
+                raise
         data = resp.json()
         # Paginated responses use { success, data: [...], pagination: {...} }
         return data.get("data", [])

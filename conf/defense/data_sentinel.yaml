@@ -8,8 +8,16 @@ model_info:
 
 params:
   max_output_tokens: 128
-  device: "cuda"
+  # For local dev on a single GPU-constrained machine, run DataSentinel on CPU
+  # to avoid large GPU allocations during model load. Set back to "cuda" on
+  # a machine with sufficient VRAM.
+  device: "cpu"
+  temperature: 0.0
+  gpus: [0]
+  # Disable 4-bit quantization to avoid dtype incompatibilities with newer PyTorch.
+  load_in_4bit: false
   # Path to the fine-tuned DataSentinel LoRA checkpoint.
   # Set to "" to fall back to the base model (KAD detection will be unreliable).
   # Download from the Open-Prompt-Injection repo or HuggingFace Hub.
   ft_path: ""
+  seed: 42

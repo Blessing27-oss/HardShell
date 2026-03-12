@@ -404,7 +404,10 @@ def main(cfg: DictConfig) -> None:
     llm_client = AsyncLLMClient(
         model=cfg.llm.model, max_concurrency=cfg.max_concurrency
     )
-    moltbook = MoltbookAPIClient()
+    # Use the Hydra run directory name as a namespace so Moltbook agent
+    # names are unique per experiment run.
+    run_namespace = Path(run_dir).name
+    moltbook = MoltbookAPIClient(namespace=run_namespace)
     jsonl_logger = JSONLLogger(log_path)
 
     # --- DataSentinel ---
