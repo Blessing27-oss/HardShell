@@ -148,7 +148,7 @@ async def _run_agent(
 
 
 # ---------------------------------------------------------------------------
-# Swarm trial orchestrator (merged from openclaw_bridge.py)
+# Swarm trial orchestrator
 # ---------------------------------------------------------------------------
 
 async def run_swarm_trial(
