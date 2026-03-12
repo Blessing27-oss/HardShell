@@ -20,6 +20,62 @@ from hardshell.generation.sentinel_adapter import AsyncDataSentinel
 logger = logging.getLogger("Tools")
 
 # ---------------------------------------------------------------------------
+# tool_defense helpers
+# ---------------------------------------------------------------------------
+
+# Tools screened by tool_defense (all consequential tool calls)
+_TOOL_DEFENSE_SCREENED: frozenset[str] = frozenset({
+    "send_email",
+    "create_post",
+    "comment_post",
+    "transfer_funds",
+    "execute_code",
+    "manage_cloud_storage",
+    "manage_password",
+    "smart_home",
+    "health_records",
+    "github",
+    "manage_calendar",
+})
+
+
+def _extract_tool_text(tool_name: str, tool_args: dict) -> str:
+    """Extract the primary human-readable text payload from tool args.
+
+    This is the text DataSentinel evaluates in tool_defense mode. We want the
+    most semantically rich field — the one injection language would propagate
+    into if the attack succeeded.
+    """
+    if tool_name in ("send_email",):
+        return tool_args.get("body", "")
+    if tool_name in ("create_post", "comment_post"):
+        return tool_args.get("content", "")
+    if tool_name == "transfer_funds":
+        return (
+            f"Transfer {tool_args.get('amount')} {tool_args.get('currency', 'USD')} "
+            f"to account {tool_args.get('to_account')}. "
+            f"Memo: {tool_args.get('memo', '')}"
+        )
+    if tool_name == "execute_code":
+        return tool_args.get("code", "")
+    if tool_name == "manage_cloud_storage":
+        # content only present on write; fall back to full args
+        return tool_args.get("content") or json.dumps(tool_args)
+    if tool_name == "manage_password":
+        return (
+            f"action={tool_args.get('action')} site={tool_args.get('site')} "
+            f"username={tool_args.get('username', '')}"
+        )
+    if tool_name == "smart_home":
+        return f"device={tool_args.get('device_id')} action={tool_args.get('action')}"
+    if tool_name in ("health_records", "github"):
+        data = tool_args.get("data")
+        return json.dumps(data) if data else json.dumps(tool_args)
+    if tool_name == "manage_calendar":
+        return json.dumps(tool_args.get("event_details") or tool_args)
+    return json.dumps(tool_args)
+
+# ---------------------------------------------------------------------------
 # Global tool registry — covers the 8 InjecAgent attack domains
 # ---------------------------------------------------------------------------
 
@@ -372,19 +428,22 @@ class LiveToolExecutor:
         self,
         agent_id: str,
         client: MoltbookAPIClient,
-        sentinel: AsyncDataSentinel,
+        sentinel: "AsyncDataSentinel | None",
         firewall: FirewallConfig,
+        tool_defense: bool = False,
     ):
-        self._agent_id = agent_id
-        self._client   = client
-        self._sentinel = sentinel
-        self._firewall = firewall
+        self._agent_id    = agent_id
+        self._client      = client
+        self._sentinel    = sentinel
+        self._firewall    = firewall
+        self._tool_defense = tool_defense
 
-        self.feed_blocks:       int  = 0
-        self.write_blocked:     bool = False
-        self.tool_call_blocked: bool = False
-        self.posted_content:    str | None = None
-        self.tool_call_log:     list[dict] = []
+        self.feed_blocks:           int  = 0
+        self.write_blocked:         bool = False
+        self.tool_call_blocked:     bool = False
+        self.tool_defense_blocks:   int  = 0   # blocks by tool_defense position
+        self.posted_content:        "str | None" = None
+        self.tool_call_log:         list[dict] = []
 
     async def _screen_write(self, content: str, label: str) -> tuple[str, bool]:
         if self._firewall.screen_on_write():
@@ -402,6 +461,27 @@ class LiveToolExecutor:
         self.tool_call_log.append({"tool": tool_name, "args": args, "result": result})
 
     async def dispatch(self, tool_name: str, tool_args: dict[str, Any]) -> str:
+        # ── tool_defense: pre-execution screen for all consequential calls ──
+        # Applied BEFORE any tool-specific logic so the defense position is
+        # consistent and cannot be bypassed by routing through a different tool.
+        if (
+            self._tool_defense
+            and self._sentinel is not None
+            and tool_name in _TOOL_DEFENSE_SCREENED
+        ):
+            text = _extract_tool_text(tool_name, tool_args)
+            _, blocked = await self._sentinel.screen(
+                text,
+                context_label=f"tool_defense/{self._agent_id}/{tool_name}",
+            )
+            if blocked:
+                self.tool_call_blocked = True
+                self.tool_defense_blocks += 1
+                logger.info(
+                    f"[tool_defense] blocked {tool_name} for {self._agent_id}"
+                )
+                return json.dumps({"success": False, "blocked": True, "defense": "tool_defense"})
+
         # ── get_feed ────────────────────────────────────────────────────
         if tool_name == "get_feed":
             submolt = tool_args.get("submolt")

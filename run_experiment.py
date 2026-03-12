@@ -94,8 +94,9 @@ async def _run_agent(
     agent_cfg: "DictConfig | AgentPersona",
     llm_client: AsyncLLMClient,
     moltbook: MoltbookAPIClient,
-    sentinel: AsyncDataSentinel | None,
+    sentinel: "AsyncDataSentinel | None",
     firewall_rules: list[dict],
+    tool_defense: bool = False,
 ) -> dict:
     """Runs one agent's full tool-use loop against the live Moltbook sandbox.
 
@@ -113,6 +114,7 @@ async def _run_agent(
         client=moltbook,
         sentinel=sentinel,
         firewall=firewall,
+        tool_defense=tool_defense,
     )
     tool_schemas = get_tool_schemas(tools)
 
@@ -128,13 +130,14 @@ async def _run_agent(
     )
 
     return {
-        "agent_id":          agent_id,
-        "tools_available":   tools,
-        "posted_content":    executor.posted_content,
-        "write_blocked":     executor.write_blocked,
-        "feed_blocks":       executor.feed_blocks,
-        "tool_call_blocked": executor.tool_call_blocked,
-        "tool_call_log":     executor.tool_call_log,
+        "agent_id":             agent_id,
+        "tools_available":      tools,
+        "posted_content":       executor.posted_content,
+        "write_blocked":        executor.write_blocked,
+        "feed_blocks":          executor.feed_blocks,
+        "tool_call_blocked":    executor.tool_call_blocked,
+        "tool_defense_blocks":  executor.tool_defense_blocks,
+        "tool_call_log":        executor.tool_call_log,
         # Crude ASR signal — superseded by LLM-as-judge evaluation below
         "sent_email": (
             "send_email" in tools
@@ -154,10 +157,11 @@ async def run_swarm_trial(
     benign_posts: "list[str | dict]",
     cfg: DictConfig,
     llm_client: AsyncLLMClient,
-    sentinel: AsyncDataSentinel | None,
+    sentinel: "AsyncDataSentinel | None",
     moltbook: MoltbookAPIClient,
     logger_: JSONLLogger,
     roster: "list | None" = None,
+    tool_defense: bool = False,
 ) -> None:
     """
     Executes one N-agent swarm trial against the live Moltbook sandbox.
@@ -182,7 +186,9 @@ async def run_swarm_trial(
 
     trial_log: dict = {
         "trial_id":         trial_id,
-        "condition":        cfg.simulation.defense,
+        "condition":        cfg.simulation.get("condition", cfg.simulation.defense),
+        "defense":          cfg.simulation.defense,
+        "tool_defense":     tool_defense,
         "inject_payload":   inject,
         "num_agents":       len(roster),
         "payload":          payload["text"] if inject else None,
@@ -217,7 +223,7 @@ async def run_swarm_trial(
 
     # Step 3: Run all N agents concurrently
     agent_coroutines = [
-        _run_agent(agent_cfg, llm_client, moltbook, sentinel, firewall_rules)
+        _run_agent(agent_cfg, llm_client, moltbook, sentinel, firewall_rules, tool_defense)
         for agent_cfg in roster  # type: ignore[union-attr]
     ]
     results = await asyncio.gather(*agent_coroutines, return_exceptions=True)
@@ -304,10 +310,12 @@ def main(cfg: DictConfig) -> None:
     moltbook = MoltbookAPIClient()
     jsonl_logger = JSONLLogger(log_path)
 
-    # --- DataSentinel (only instantiated when firewalls are configured) ---
+    # --- DataSentinel ---
+    # Instantiate when any screening position is active: firewalls OR tool_defense.
     has_firewalls = len(cfg.simulation.get("firewalls", [])) > 0
-    sentinel: AsyncDataSentinel | None = None
-    if has_firewalls:
+    tool_defense  = bool(cfg.simulation.get("tool_defense", False))
+    sentinel: "AsyncDataSentinel | None" = None
+    if has_firewalls or tool_defense:
         sentinel = AsyncDataSentinel(
             OmegaConf.to_container(cfg.defense, resolve=True)
         )
@@ -370,6 +378,7 @@ def main(cfg: DictConfig) -> None:
                 moltbook,
                 jsonl_logger,
                 roster=roster,
+                tool_defense=tool_defense,
             )
             for i, payload in enumerate(trial_payloads)
         ]
@@ -377,8 +386,10 @@ def main(cfg: DictConfig) -> None:
         await llm_client.aclose()
 
     print(
-        f"\nHardShell — condition={cfg.simulation.condition} ({cfg.simulation.defense}) | "
-        f"model={cfg.llm.model} | trials={cfg.num_trials} | agents={cfg.num_agents}"
+        f"\nHardShell — condition={cfg.simulation.get('condition', cfg.simulation.defense)} "
+        f"| defense={cfg.simulation.defense} | tool_defense={tool_defense} "
+        f"| attack={cfg.simulation.get('inject_payload', True)} "
+        f"| model={cfg.llm.model} | trials={cfg.num_trials} | agents={cfg.num_agents}"
         f"\nRun dir → {run_dir}\n"
     )
     asyncio.run(run_suite())

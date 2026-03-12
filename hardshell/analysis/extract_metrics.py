@@ -41,23 +41,30 @@ def load_transcripts(jsonl_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             n_agents     = trial.get("num_agents", len(results)) or 1
             post_lengths = [len(a["posted_content"]) for a in successful if a.get("posted_content")]
 
+            n_tool_defense_blocked = sum(
+                a.get("tool_defense_blocks", 0) for a in successful
+            )
+
             trial_row = {
-                "trial_id":           trial.get("trial_id"),
-                "condition":          trial.get("condition"),
-                "inject_payload":     trial.get("inject_payload", True),
-                "num_agents":         trial.get("num_agents"),
-                "payload":            trial.get("payload"),
-                "attack_type":        trial.get("attack_type"),
-                "payload_position":   trial.get("payload_position"),
-                "target_execution_asr": trial.get("target_execution_asr"),
-                "task_completed":     trial.get("task_completed"),
-                "utility_score":      trial.get("utility_score"),
-                "judge_rationale":    trial.get("judge_rationale"),
-                "n_posted":           n_posted,
-                "n_sent_email":       n_sent_email,
-                "n_errored":          len(errored),
-                "participation_rate": n_posted / n_agents,
-                "mean_post_length":   sum(post_lengths) / len(post_lengths) if post_lengths else 0.0,
+                "trial_id":              trial.get("trial_id"),
+                "condition":             trial.get("condition"),
+                "defense":               trial.get("defense", trial.get("condition")),
+                "tool_defense":          int(bool(trial.get("tool_defense", False))),
+                "inject_payload":        int(bool(trial.get("inject_payload", False))),
+                "num_agents":            trial.get("num_agents"),
+                "payload":               trial.get("payload"),
+                "attack_type":           trial.get("attack_type"),
+                "payload_position":      trial.get("payload_position"),
+                "target_execution_asr":  trial.get("target_execution_asr"),
+                "task_completed":        trial.get("task_completed"),
+                "utility_score":         trial.get("utility_score"),
+                "judge_rationale":       trial.get("judge_rationale"),
+                "n_posted":              n_posted,
+                "n_sent_email":          n_sent_email,
+                "n_errored":             len(errored),
+                "n_tool_defense_blocked": n_tool_defense_blocked,
+                "participation_rate":    n_posted / n_agents,
+                "mean_post_length":      sum(post_lengths) / len(post_lengths) if post_lengths else 0.0,
             }
             trial_rows.append(trial_row)
 
@@ -68,16 +75,17 @@ def load_transcripts(jsonl_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
                 content = agent.get("posted_content")
                 agent_rows.append({
                     **trial_meta,
-                    "agent_id":           agent.get("agent_id"),
-                    "tools_available":    json.dumps(agent.get("tools_available", [])),
-                    "posted":             int(bool(content)),
-                    "posted_content":     content,
-                    "post_length":        len(content) if content else 0,
-                    "sent_email":         int(bool(agent.get("sent_email"))),
-                    "had_email_tool":     int(had_email_tool),
-                    "write_blocked":      int(agent.get("write_blocked", False)),
-                    "feed_blocks":        agent.get("feed_blocks", 0),
-                    "tool_call_blocked":  int(agent.get("tool_call_blocked", False)),
+                    "agent_id":             agent.get("agent_id"),
+                    "tools_available":      json.dumps(agent.get("tools_available", [])),
+                    "posted":               int(bool(content)),
+                    "posted_content":       content,
+                    "post_length":          len(content) if content else 0,
+                    "sent_email":           int(bool(agent.get("sent_email"))),
+                    "had_email_tool":       int(had_email_tool),
+                    "write_blocked":        int(agent.get("write_blocked", False)),
+                    "feed_blocks":          agent.get("feed_blocks", 0),
+                    "tool_call_blocked":    int(agent.get("tool_call_blocked", False)),
+                    "tool_defense_blocks":  agent.get("tool_defense_blocks", 0),
                 })
 
     return pd.DataFrame(trial_rows), pd.DataFrame(agent_rows)

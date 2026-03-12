@@ -330,6 +330,126 @@ def plot_asr_by_attack_type(df_trials: pd.DataFrame, save_path: str) -> None:
 # 08 — Payload position vs ASR
 # ---------------------------------------------------------------------------
 
+def plot_2x2_factorial(df_trials: pd.DataFrame, save_path: str) -> None:
+    """2×2 grouped bar chart: ASR and Utility across attack × tool_defense cells.
+
+    This is the primary result figure for the tool_defense experiment.
+    Rows: attack (0=no attack, 1=attack); Cols: tool_defense (0/1).
+    Two panels side-by-side: left=ASR, right=Utility Score.
+    """
+    plt.style.use(_STYLE)
+
+    if "tool_defense" not in df_trials.columns or "inject_payload" not in df_trials.columns:
+        return
+
+    df = df_trials[
+        (df_trials["utility_score"] >= 0) & (df_trials["target_execution_asr"] >= 0)
+    ].copy()
+    if df.empty:
+        return
+
+    df["attack_label"]  = df["inject_payload"].map({0: "No Attack", 1: "Attack", False: "No Attack", True: "Attack"})
+    df["defense_label"] = df["tool_defense"].map({0: "No Defense", 1: "Tool Defense", False: "No Defense", True: "Tool Defense"})
+
+    attack_levels  = ["No Attack", "Attack"]
+    defense_levels = ["No Defense", "Tool Defense"]
+
+    x      = np.arange(len(attack_levels))
+    width  = 0.35
+    colors = {
+        "No Defense":   _PALETTE[0],   # navy
+        "Tool Defense": _PALETTE[3],   # green
+    }
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=False)
+
+    for ax, (metric, label, ylim) in zip(axes, [
+        ("target_execution_asr", "Attack Success Rate (ASR)", (0, 1.2)),
+        ("utility_score",        "Task Utility Score",        (0, 1.2)),
+    ]):
+        for di, dlabel in enumerate(defense_levels):
+            means, errs = [], []
+            for alabel in attack_levels:
+                sub = df[(df["attack_label"] == alabel) & (df["defense_label"] == dlabel)]
+                means.append(sub[metric].mean() if len(sub) else 0.0)
+                errs.append(sub[metric].sem()  if len(sub) else 0.0)
+
+            offset = (di - 0.5) * width
+            bars = ax.bar(
+                x + offset, means, width,
+                yerr=errs, label=dlabel,
+                color=colors[dlabel], alpha=0.85,
+                capsize=4, error_kw={"linewidth": 1.2},
+            )
+            for bar, mean in zip(bars, means):
+                if not np.isnan(mean):
+                    ax.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + 0.04,
+                        f"{mean:.2f}",
+                        ha="center", va="bottom", fontsize=8,
+                    )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(attack_levels, fontsize=10)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(label, fontsize=10)
+        ax.set_xlabel("Attack Condition", fontsize=9)
+        ax.yaxis.grid(True, linestyle="--", alpha=0.6)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=9, framealpha=0.85)
+
+    fig.suptitle(
+        "2×2 Factorial: Tool Defense × Attack — ASR and Utility",
+        fontsize=13, fontweight="bold", y=1.02,
+    )
+    _savefig(fig, save_path)
+
+
+def plot_tool_defense_block_rate(df_agents: pd.DataFrame, save_path: str) -> None:
+    """Bar chart: tool_defense block rate by agent tool type.
+
+    Shows which tools are most frequently blocked by DataSentinel
+    in the tool_defense position — useful for diagnosing false-positive rates.
+    """
+    plt.style.use(_STYLE)
+
+    if "tool_defense_blocks" not in df_agents.columns:
+        return
+
+    # Only rows where tool_defense was active and agent had relevant tools
+    df = df_agents[df_agents.get("tool_defense", pd.Series(0, index=df_agents.index)) == 1].copy() \
+        if "tool_defense" in df_agents.columns else df_agents.copy()
+
+    if df.empty or df["tool_defense_blocks"].sum() == 0:
+        return
+
+    # Group by agent and condition
+    agg = (
+        df.groupby(["condition", "agent_id"])["tool_defense_blocks"]
+        .mean()
+        .reset_index()
+        .rename(columns={"tool_defense_blocks": "mean_blocks"})
+    )
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    conditions = sorted(agg["condition"].unique())
+    palette = dict(zip(conditions, _PALETTE * (len(conditions) // len(_PALETTE) + 1)))
+    for cond in conditions:
+        sub = agg[agg["condition"] == cond]
+        ax.scatter(sub["agent_id"], sub["mean_blocks"],
+                   label=cond, color=palette[cond], s=60, alpha=0.8)
+
+    ax.set_ylabel("Mean tool_defense blocks / trial", fontsize=10)
+    ax.set_xlabel("Agent ID", fontsize=9)
+    ax.yaxis.grid(True, linestyle="--", alpha=0.5)
+    ax.set_axisbelow(True)
+    ax.legend(fontsize=9, title="Condition", framealpha=0.85)
+    ax.set_title("Tool Defense Block Rate by Agent", fontsize=12, fontweight="bold")
+    plt.xticks(rotation=30, ha="right", fontsize=8)
+    _savefig(fig, save_path)
+
+
 def plot_payload_position(df_trials: pd.DataFrame, save_path: str) -> None:
     """Bar: ASR bucketed by payload injection position in the feed."""
     plt.style.use(_STYLE)

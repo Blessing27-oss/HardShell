@@ -40,6 +40,13 @@ from hardshell.analysis.plotting import (
     plot_swarm_interaction,
     plot_asr_by_attack_type,
     plot_payload_position,
+    plot_2x2_factorial,
+    plot_tool_defense_block_rate,
+)
+from hardshell.analysis.regressions import (
+    calculate_utility_tax,
+    factorial_regression,
+    format_factorial_results,
 )
 
 log = logging.getLogger(__name__)
@@ -90,19 +97,23 @@ def main(cfg: DictConfig) -> None:
     # ------------------------------------------------------------------ #
     # 2. Summary tables                                                    #
     # ------------------------------------------------------------------ #
-    summary = df_trials.groupby("condition").agg(
-        n_trials          = ("trial_id",           "count"),
-        asr_mean          = ("target_execution_asr","mean"),
-        asr_se            = ("target_execution_asr","sem"),
-        utility_mean      = ("utility_score",       "mean"),
-        utility_se        = ("utility_score",       "sem"),
-        task_completed    = ("task_completed",       "mean"),
-        participation_mean= ("participation_rate",  "mean"),
-        posts_per_trial   = ("n_posted",             "mean"),
-        emails_per_trial  = ("n_sent_email",         "mean"),
-        errors_per_trial  = ("n_errored",            "mean"),
-        mean_post_length  = ("mean_post_length",    "mean"),
-    ).reset_index()
+    agg_cols = {
+        "n_trials":           ("trial_id",            "count"),
+        "asr_mean":           ("target_execution_asr","mean"),
+        "asr_se":             ("target_execution_asr","sem"),
+        "utility_mean":       ("utility_score",       "mean"),
+        "utility_se":         ("utility_score",       "sem"),
+        "task_completed":     ("task_completed",      "mean"),
+        "participation_mean": ("participation_rate",  "mean"),
+        "posts_per_trial":    ("n_posted",            "mean"),
+        "emails_per_trial":   ("n_sent_email",        "mean"),
+        "errors_per_trial":   ("n_errored",           "mean"),
+        "mean_post_length":   ("mean_post_length",    "mean"),
+    }
+    if "n_tool_defense_blocked" in df_trials.columns:
+        agg_cols["tool_def_blocks_per_trial"] = ("n_tool_defense_blocked", "mean")
+
+    summary = df_trials.groupby("condition").agg(**agg_cols).reset_index()
     summary.to_csv(tables_dir / "summary.csv", index=False)
     log.info(f"Summary table:\n{summary.to_string(index=False)}")
 
@@ -123,28 +134,48 @@ def main(cfg: DictConfig) -> None:
     print(text_summary)
 
     # ------------------------------------------------------------------ #
-    # 3. Regression — utility tax                                          #
+    # 3. Regressions                                                        #
     # ------------------------------------------------------------------ #
+    reg_texts = []
+
+    # 3a. 2×2 factorial regression (tool_defense × attack)
+    has_factorial = (
+        "tool_defense" in df_trials.columns
+        and "inject_payload" in df_trials.columns
+        and df_trials["tool_defense"].nunique() > 1
+        and df_trials["inject_payload"].nunique() > 1
+        and df_trials["utility_score"].notna().any()
+    )
+    if has_factorial:
+        try:
+            u_model, asr_model = factorial_regression(df_trials)
+            reg_texts.append(format_factorial_results(u_model, asr_model))
+            log.info("2×2 factorial regression complete.")
+        except Exception as e:
+            log.warning(f"Factorial regression failed: {e}")
+
+    # 3b. Legacy utility-tax regression across conditions
     if df_trials["condition"].nunique() > 1 and df_trials["utility_score"].notna().any():
         try:
             df_reg = df_trials.copy()
             baseline = df_reg["condition"].min()
             df_reg["condition"] = pd.Categorical(
-                df_reg["condition"],
-                categories=sorted(df_reg["condition"].unique()),
+                df_reg["condition"], categories=sorted(df_reg["condition"].unique())
             )
             model = smf.ols("utility_score ~ C(condition)", data=df_reg).fit()
-            reg_text = (
+            reg_texts.append(
                 f"Utility Tax Regression (baseline = {baseline})\n"
                 + "=" * 50 + "\n"
                 + str(model.summary())
             )
-            (tables_dir / "regression.txt").write_text(reg_text)
-            log.info(f"Regression saved → {tables_dir / 'regression.txt'}")
         except Exception as e:
-            log.warning(f"Regression failed: {e}")
+            log.warning(f"Condition regression failed: {e}")
+
+    if reg_texts:
+        (tables_dir / "regression.txt").write_text("\n\n".join(reg_texts))
+        log.info(f"Regression(s) saved → {tables_dir / 'regression.txt'}")
     else:
-        log.warning("Skipping regression — need ≥2 conditions with utility_score labels.")
+        log.warning("Skipping regressions — insufficient data.")
 
     # ------------------------------------------------------------------ #
     # 4. Plots                                                             #
@@ -181,16 +212,38 @@ def main(cfg: DictConfig) -> None:
             )
             used_conditions.add(cond)
 
-    if df_trials["inject_payload"].any():
+    # 2×2 factorial plot (only when both factors vary)
+    if (
+        "tool_defense" in df_trials.columns
+        and df_trials["tool_defense"].nunique() > 1
+        and "inject_payload" in df_trials.columns
+        and df_trials["inject_payload"].nunique() > 1
+    ):
+        plot_steps.append(
+            ("07 2×2 factorial",  lambda: plot_2x2_factorial(
+                df_trials, _fmt(plots_dir / f"07_2x2_factorial.{fmt}")))
+        )
+    elif df_trials.get("inject_payload", pd.Series(False)).any():
         plot_steps.append(
             ("07 ASR by attack type", lambda: plot_asr_by_attack_type(
                 df_trials, _fmt(plots_dir / f"07_asr_by_attack_type.{fmt}")))
         )
-        if df_trials["payload_position"].notna().any():
-            plot_steps.append(
-                ("08 payload position", lambda: plot_payload_position(
-                    df_trials, _fmt(plots_dir / f"08_payload_position.{fmt}")))
-            )
+
+    if df_trials.get("payload_position", pd.Series(dtype=float)).notna().any():
+        plot_steps.append(
+            ("08 payload position", lambda: plot_payload_position(
+                df_trials, _fmt(plots_dir / f"08_payload_position.{fmt}")))
+        )
+
+    if (
+        "tool_defense" in df_trials.columns
+        and df_trials["tool_defense"].any()
+        and not df_agents.empty
+    ):
+        plot_steps.append(
+            ("09 tool defense block rate", lambda: plot_tool_defense_block_rate(
+                df_agents, _fmt(plots_dir / f"09_tool_defense_block_rate.{fmt}")))
+        )
 
     for label, fn in tqdm(plot_steps, desc="Generating plots", unit="plot"):
         tqdm.write(f"  → {label}")

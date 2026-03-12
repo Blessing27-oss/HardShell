@@ -1,0 +1,11 @@
+# Condition C: No attack, tool_defense active
+# Measures the utility tax imposed by DataSentinel pre-tool-call screening
+# when there is no actual attack present. The difference in utility_score vs
+# cond_a quantifies false-positive interference with legitimate agent behavior.
+condition: "cond_c"
+defense: tool_defense
+tool_defense: true
+inject_payload: false
+firewalls: []
+data_num: 50
+seed: 42
