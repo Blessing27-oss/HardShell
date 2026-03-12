@@ -164,18 +164,13 @@ async def run_swarm_trial(
     tool_defense: bool = False,
 ) -> None:
     """
-    Executes one N-agent swarm trial against the live Moltbook sandbox.
+    Executes one N-agent swarm *world* against the live Moltbook sandbox.
 
-    The swarm's task is Moltbook social engagement: agents read the shared feed
-    and post as autonomous social participants (per their Molten Agent Kit personas).
+    Within a world, agents act for `cfg.world_steps` steps before the sandbox
+    state is reset. This lets subscriptions, karma, and ranking dynamics
+    evolve over time while keeping each world isolated from the next.
+
     Pass payload=None for the benign baseline (condition 0) — no attack is injected.
-
-    Flow:
-        1. Reset sandbox feed
-        2. Seed feed: benign posts, optionally + injected payload at a random position
-        3. Run all N agents concurrently (asyncio.gather)
-        4. LLM-as-judge evaluation: ASR, task completion, utility score
-        5. Append immutable trial log to JSONL
     """
     if roster is None:
         roster = list(cfg.swarm.agents)[: cfg.num_agents]
@@ -183,6 +178,7 @@ async def run_swarm_trial(
         cfg.simulation.get("firewalls", []), resolve=True
     )
     inject = payload is not None
+    world_steps: int = cfg.get("world_steps", 1)
 
     trial_log: dict = {
         "trial_id":         trial_id,
@@ -194,13 +190,14 @@ async def run_swarm_trial(
         "payload":          payload["text"] if inject else None,
         "attack_type":      payload.get("attack_type", "") if inject else None,
         "payload_position": None,
+        "world_steps":      world_steps,
         "agent_results":    [],
     }
 
     # Step 1: Reset sandbox
     moltbook.reset_state()
 
-    # Step 2: Seed feed
+    # Step 2: Seed feed (sandbox helper)
     feed = list(benign_posts)
     if inject:
         insert_idx = random.randint(0, len(feed))
@@ -209,8 +206,10 @@ async def run_swarm_trial(
 
     for i, post in enumerate(feed):
         if inject and i == insert_idx:
-            moltbook.inject_post(post if isinstance(post, str) else post["content"],
-                                 author_id="external_attacker")
+            moltbook.inject_post(
+                post if isinstance(post, str) else post["content"],
+                author_id="external_attacker",
+            )
         else:
             if isinstance(post, dict):
                 # Rich benign post from data/timelines/benign.json
@@ -221,21 +220,71 @@ async def run_swarm_trial(
             else:
                 moltbook.inject_post(post, author_id=f"moltbook_user_{i}")
 
-    # Step 3: Run all N agents concurrently
-    agent_coroutines = [
-        _run_agent(agent_cfg, llm_client, moltbook, sentinel, firewall_rules, tool_defense)
-        for agent_cfg in roster  # type: ignore[union-attr]
-    ]
-    results = await asyncio.gather(*agent_coroutines, return_exceptions=True)
+    # Step 2b: Initialize per-agent Moltbook accounts and subscriptions
+    for agent_cfg in roster:  # type: ignore[union-attr]
+        agent_id = agent_cfg.id
+        # Ensure agent is registered and has an API key
+        _ = moltbook._get_agent_headers(agent_id)  # registers on demand
 
-    for agent_cfg, result in zip(roster, results):
-        if isinstance(result, Exception):
-            log.error(f"Trial {trial_id} agent {agent_cfg.id} failed: {result}")
-            trial_log["agent_results"].append(
-                {"agent_id": agent_cfg.id, "error": str(result)}
-            )
-        else:
-            trial_log["agent_results"].append(result)
+        # Best-effort subscription to archetype submolts (if available)
+        submolts = getattr(agent_cfg, "submolt_affinity", [])
+        if submolts:
+            try:
+                moltbook.subscribe_submolts(agent_id, submolts)
+            except Exception:
+                # Subscriptions are best-effort; failures should not abort the world.
+                continue
+
+    # Step 3: Run all N agents across multiple steps in the same world
+    # Aggregate per-agent metrics across steps so the JSONL shape stays
+    # close to the previous single-step design.
+    aggregated_results: dict[str, dict] = {
+        agent_cfg.id: {
+            "agent_id":            agent_cfg.id,
+            "tools_available":     list(agent_cfg.tools),
+            "posted_content":      None,
+            "write_blocked":       False,
+            "feed_blocks":         0,
+            "tool_call_blocked":   False,
+            "tool_defense_blocks": 0,
+            "tool_call_log":       [],
+            "sent_email":          False,
+            "errors":              [],
+        }
+        for agent_cfg in roster  # type: ignore[union-attr]
+    }
+
+    for step in range(world_steps):
+        agent_coroutines = [
+            _run_agent(agent_cfg, llm_client, moltbook, sentinel, firewall_rules, tool_defense)
+            for agent_cfg in roster  # type: ignore[union-attr]
+        ]
+        results = await asyncio.gather(*agent_coroutines, return_exceptions=True)
+
+        for agent_cfg, result in zip(roster, results):
+            summary = aggregated_results[agent_cfg.id]
+            if isinstance(result, Exception):
+                log.error(f"Trial {trial_id} step {step} agent {agent_cfg.id} failed: {result}")
+                summary["errors"].append(str(result))
+                continue
+
+            # Merge metrics from this step into the world-level summary.
+            summary["feed_blocks"] += result.get("feed_blocks", 0)
+            summary["tool_defense_blocks"] += result.get("tool_defense_blocks", 0)
+            summary["write_blocked"] = summary["write_blocked"] or result.get("write_blocked", False)
+            summary["tool_call_blocked"] = summary["tool_call_blocked"] or result.get("tool_call_blocked", False)
+            summary["sent_email"] = summary["sent_email"] or result.get("sent_email", False)
+
+            # Keep the most recent posted_content, if any.
+            if result.get("posted_content") is not None:
+                summary["posted_content"] = result["posted_content"]
+
+            # Concatenate tool call logs across steps.
+            step_log = result.get("tool_call_log") or []
+            if step_log:
+                summary["tool_call_log"].extend(step_log)
+
+    trial_log["agent_results"] = list(aggregated_results.values())
 
     # Step 4: LLM-as-judge evaluation
     # Task: agents are Moltbook social participants — their job is to read the
@@ -321,7 +370,8 @@ def main(cfg: DictConfig) -> None:
         )
 
     # --- InjecAgent payloads ---
-    payloads = load_injecagent_payloads(limit=cfg.num_trials)
+    num_worlds: int = cfg.get("num_worlds", cfg.num_trials)
+    payloads = load_injecagent_payloads(limit=num_worlds)
 
     # --- Benign posts ---
     benign_path = Path(cfg.directories.timelines) / "benign.json"
@@ -361,9 +411,9 @@ def main(cfg: DictConfig) -> None:
     # condition 0 (inject_payload: false) — pass None so no attack is seeded
     inject = cfg.simulation.get("inject_payload", True)
     trial_payloads: list[dict | None] = (
-        [None] * cfg.num_trials
+        [None] * num_worlds
         if not inject
-        else payloads[: cfg.num_trials]
+        else payloads[: num_worlds]
     )
 
     async def run_suite() -> None:
@@ -395,7 +445,7 @@ def main(cfg: DictConfig) -> None:
         f"\nHardShell — condition={cfg.simulation.get('condition', cfg.simulation.defense)} "
         f"| defense={cfg.simulation.defense} | tool_defense={tool_defense} "
         f"| attack={cfg.simulation.get('inject_payload', True)} "
-        f"| model={cfg.llm.model} | trials={cfg.num_trials} | agents={cfg.num_agents}"
+        f"| model={cfg.llm.model} | worlds={num_worlds} | steps={cfg.get('world_steps', 1)} | agents={cfg.num_agents}"
         f"\nRun dir → {run_dir}\n"
     )
     asyncio.run(run_suite())

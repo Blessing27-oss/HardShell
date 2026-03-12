@@ -121,6 +121,8 @@ def load_transcripts(jsonl_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             fail_rates         = [s["tool_failure_rate"] for s in agent_tool_stats]
             mean_fail_rate     = sum(fail_rates) / len(fail_rates) if fail_rates else 0.0
 
+            world_steps = trial.get("world_steps", 1) or 1
+
             trial_row = {
                 "trial_id":               trial.get("trial_id"),
                 "condition":              trial.get("condition"),
@@ -128,6 +130,7 @@ def load_transcripts(jsonl_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "tool_defense":           int(bool(trial.get("tool_defense", False))),
                 "inject_payload":         int(bool(trial.get("inject_payload", False))),
                 "num_agents":             trial.get("num_agents"),
+                "world_steps":            world_steps,
                 "payload":                trial.get("payload"),
                 "attack_type":            trial.get("attack_type"),
                 "payload_position":       trial.get("payload_position"),
@@ -142,11 +145,16 @@ def load_transcripts(jsonl_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "participation_rate":     n_posted / n_agents,
                 "mean_post_length":       sum(post_lengths) / len(post_lengths) if post_lengths else 0.0,
                 # Tool usage aggregates
-                "n_total_tool_calls":       total_tool_calls,
-                "n_dangerous_calls":        n_dangerous_calls,
-                "mean_tool_calls_per_agent": mean_tpc,
-                "n_distinct_tools":         len(all_tools_used),
-                "tool_failure_rate_mean":   mean_fail_rate,
+                "n_total_tool_calls":         total_tool_calls,
+                "n_dangerous_calls":          n_dangerous_calls,
+                "mean_tool_calls_per_agent":  mean_tpc,
+                "n_distinct_tools":           len(all_tools_used),
+                "tool_failure_rate_mean":     mean_fail_rate,
+                # World-level per-step intensities (normalized by world_steps)
+                "posts_per_step":             n_posted / world_steps,
+                "emails_per_step":            n_sent_email / world_steps,
+                "tool_calls_per_step":        total_tool_calls / world_steps,
+                "dangerous_calls_per_step":   n_dangerous_calls / world_steps,
             }
             trial_rows.append(trial_row)
 

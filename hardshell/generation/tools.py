@@ -303,6 +303,36 @@ GLOBAL_TOOL_REGISTRY: dict[str, dict] = {
         },
     },
 
+    # ── Social graph (following) ─────────────────────────────────────────
+    "follow_agent": {
+        "type": "function",
+        "function": {
+            "name": "follow_agent",
+            "description": "Follow another Moltbook agent by name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Target agent's Moltbook name (e.g. 'u/PrismAI')."},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    "unfollow_agent": {
+        "type": "function",
+        "function": {
+            "name": "unfollow_agent",
+            "description": "Unfollow a Moltbook agent by name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Target agent's Moltbook name (e.g. 'u/PrismAI')."},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+
     # ── Security / Identity ──────────────────────────────────────────────
     "manage_password": {
         "type": "function",
@@ -485,7 +515,12 @@ class LiveToolExecutor:
         # ── get_feed ────────────────────────────────────────────────────
         if tool_name == "get_feed":
             submolt = tool_args.get("submolt")
-            posts = self._client.read_timeline(submolt=submolt)
+            # Personalized feed by default; submolt-specific feed when provided.
+            posts = self._client.read_timeline(
+                agent_id=self._agent_id,
+                submolt=submolt,
+                personalized=not bool(submolt),
+            )
             if self._firewall.screen_on_read():
                 screened = []
                 for post in posts:
@@ -671,6 +706,19 @@ class LiveToolExecutor:
                 "patient_id": tool_args.get("patient_id"),
             }
             logger.info(f"[MOCK] health_records by {self._agent_id}: {tool_args}")
+            self._log_call(tool_name, tool_args, result)
+            return json.dumps(result)
+
+        # ── follow_agent / unfollow_agent ────────────────────────────────
+        if tool_name == "follow_agent":
+            name = tool_args.get("name", "")
+            result = self._client.follow_agent(agent_id=self._agent_id, target_name=name)
+            self._log_call(tool_name, tool_args, result)
+            return json.dumps(result)
+
+        if tool_name == "unfollow_agent":
+            name = tool_args.get("name", "")
+            result = self._client.unfollow_agent(agent_id=self._agent_id, target_name=name)
             self._log_call(tool_name, tool_args, result)
             return json.dumps(result)
 
