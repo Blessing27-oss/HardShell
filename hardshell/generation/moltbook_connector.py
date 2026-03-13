@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import time
 from typing import Dict, List, Optional
 
@@ -87,30 +88,31 @@ class MoltbookAPIClient:
         }
 
     def _register_agent(self, agent_id: str) -> None:
-        """Register a Moltbook agent for the given HardShell agent id."""
+        """Register a Moltbook agent for the given HardShell agent id.
+
+        Name rules: ^[a-z0-9_]+$, 2-32 chars.
+        On 409 collision, append a 4-char hex suffix to stay within the limit.
+        """
         url = f"{self._api_url}/agents/register"
-        # Name must be unique; use an optional namespace (per run) plus the
-        # HardShell agent id. On 409 we fall back to suffixed variants so
-        # repeated runs don't collide even if the namespace is reused.
         base_name = f"{self._namespace}_{agent_id}" if self._namespace else agent_id
-        for attempt in range(3):
-            name = base_name if attempt == 0 else f"{base_name}_{int(time.time())}_{attempt}"
+        # Truncate to 27 chars to leave room for a 5-char "_XXXX" suffix on retry.
+        base_name = base_name[:27]
+        for attempt in range(5):
+            name = base_name if attempt == 0 else f"{base_name}_{secrets.token_hex(2)}"
             payload = {
                 "name": name,
-                "description": f"HardShell experimental agent {agent_id}",
+                "description": f"HardShell agent {agent_id}",
             }
             try:
                 resp = self._post_with_retry(url, json=payload)
                 data = resp.json()
-                agent = data.get("agent") or {}
-                api_key = agent.get("api_key")
+                api_key = (data.get("agent") or {}).get("api_key")
                 if not api_key:
-                    raise RuntimeError(f"Failed to register Moltbook agent for {agent_id}: {data}")
+                    raise RuntimeError(f"No api_key in register response for {agent_id}: {data}")
                 self._agent_tokens[agent_id] = api_key
                 return
             except HTTPError as e:
-                if e.response is not None and e.response.status_code == 409 and attempt < 2:
-                    # Name collision; try again with a new unique suffix.
+                if e.response is not None and e.response.status_code == 409 and attempt < 4:
                     continue
                 raise
 

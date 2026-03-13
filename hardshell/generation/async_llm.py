@@ -79,7 +79,7 @@ def _load_key_configs(gemini_model: str) -> List[LLMKeyConfig]:
         gemini_model if gemini_model.startswith("gemini/")
         else f"gemini/{gemini_model}"
     )
-    for i in range(1, 9):
+    for i in range(1, 32):
         k = os.environ.get(f"GOOGLE_API_KEY_{i}")
         if k:
             configs.append(LLMKeyConfig(api_key=k, model=litellm_gemini, base_url=None))
@@ -92,7 +92,7 @@ def _load_key_configs(gemini_model: str) -> List[LLMKeyConfig]:
 
     # --- Dartmouth Chat keys (GPT-OSS 120b) ---
     litellm_dartmouth = f"openai/{_DARTMOUTH_MODEL}"
-    for i in range(1, 9):
+    for i in range(1, 32):
         k = os.environ.get(f"DARTMOUTH_API_KEY_{i}")
         if k:
             configs.append(LLMKeyConfig(
@@ -121,46 +121,39 @@ def _load_key_configs(gemini_model: str) -> List[LLMKeyConfig]:
 # ---------------------------------------------------------------------------
 
 class AsyncLLMClient:
-    """Async multi-provider LLM client with key rotation and rate-limit-aware retry.
+    """Async multi-provider LLM client with per-key semaphores and round-robin dispatch.
 
-    On a 429 the next key is tried immediately (no sleep).
-    Only when all keys are exhausted in one full cycle does the client sleep.
-    The semaphore is held throughout — including any sleep — so no other
-    coroutine can consume quota while we are recovering.
+    Each key gets its own semaphore(max_concurrency // n_keys) so all keys are
+    used in parallel. Requests round-robin across keys; on 429 the next key is
+    tried immediately. Only sleeps when every key is exhausted in one full cycle.
     """
 
     def __init__(self, model: str = "gemini-2.5-flash-lite", max_concurrency: int = 1):
         self._keys = _load_key_configs(gemini_model=model)
-        self._key_index = 0
-        self.semaphore = asyncio.Semaphore(max_concurrency)
-
-    @property
-    def _current(self) -> LLMKeyConfig:
-        return self._keys[self._key_index % len(self._keys)]
-
-    def _rotate(self) -> None:
-        self._key_index += 1
-        idx = self._key_index % len(self._keys)
-        cfg = self._keys[idx]
-        provider = "Dartmouth" if cfg.base_url else "Gemini"
-        logger.warning(f"Rotated to key {idx + 1}/{len(self._keys)} ({provider})")
+        n = len(self._keys)
+        per_key = max(1, max_concurrency // n)
+        self._semaphores = [asyncio.Semaphore(per_key) for _ in self._keys]
+        self._rr_index = 0  # round-robin counter; safe to mutate without a lock in asyncio
+        logger.info(f"Per-key concurrency: {per_key} × {n} keys = {per_key * n} total slots")
 
     async def astart(self) -> None:
-        pass  # LiteLLM has no broker to start; method exists for API compatibility
+        pass
 
     async def aclose(self) -> None:
-        pass  # LiteLLM manages its own connection pool
+        pass
 
     async def _call_api(self, fn: Callable[[LLMKeyConfig], Awaitable[Any]]) -> Any:
-        """Run fn(cfg) inside the semaphore with key-rotation on 429.
-
-        Semaphore is held during retry sleeps so no other coroutine burns quota.
-        """
+        """Dispatch fn to the next key in round-robin; rotate on 429."""
         n = len(self._keys)
-        async with self.semaphore:
-            for attempt in range(_MAX_ATTEMPTS):
+        start = self._rr_index
+        self._rr_index = (start + 1) % n  # advance for the next caller
+
+        for attempt in range(_MAX_ATTEMPTS):
+            idx = (start + attempt) % n
+            cfg = self._keys[idx]
+            async with self._semaphores[idx]:
                 try:
-                    return await fn(self._current)
+                    return await fn(cfg)
                 except Exception as e:
                     is_rate_limit = (
                         "429" in str(e)
@@ -169,13 +162,12 @@ class AsyncLLMClient:
                     )
                     if not is_rate_limit:
                         raise
-                    self._rotate()
-                    if (attempt + 1) % n == 0:
-                        logger.warning(
-                            f"All {n} key(s) exhausted — sleeping {_FULL_CYCLE_SLEEP}s…"
-                        )
-                        await asyncio.sleep(_FULL_CYCLE_SLEEP)
-            raise RuntimeError(f"API call failed after {_MAX_ATTEMPTS} attempts.")
+                    provider = "Dartmouth" if cfg.base_url else "Gemini"
+                    logger.warning(f"429 on key {idx + 1}/{n} ({provider}), trying next")
+            if (attempt + 1) % n == 0:
+                logger.warning(f"All {n} key(s) exhausted — sleeping {_FULL_CYCLE_SLEEP}s…")
+                await asyncio.sleep(_FULL_CYCLE_SLEEP)
+        raise RuntimeError(f"API call failed after {_MAX_ATTEMPTS} attempts.")
 
     async def generate_text(
         self, messages: List[Dict], temperature: float = 0.0
