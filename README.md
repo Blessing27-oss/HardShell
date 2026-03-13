@@ -4,7 +4,7 @@ A research platform for studying **prompt injection attacks in multi-agent LLM s
 
 ## Research Overview
 
-Modern LLM deployments increasingly use multi-agent architectures where agents collaborate autonomously. HardShell investigates a key threat: can an attacker inject a malicious post into the shared feed and hijack agent behaviour — and can defenses stop it without breaking the swarm?
+Modern LLM deployments increasingly use multi-agent architectures where agents collaborate autonomously. HardShell investigates a key threat: can an attacker inject a malicious post into the shared feed and hijack agent behaviour, and can defenses stop it without breaking the swarm?
 
 ### Defense Conditions
 
