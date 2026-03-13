@@ -220,11 +220,15 @@ async def run_swarm_trial(
             else:
                 moltbook.inject_post(post, author_id=f"moltbook_user_{i}")
 
-    # Step 2b: Initialize per-agent Moltbook accounts and subscriptions
+    # Step 2b: Initialize per-agent Moltbook accounts and subscriptions (best-effort)
     for agent_cfg in roster:  # type: ignore[union-attr]
         agent_id = agent_cfg.id
-        # Ensure agent is registered and has an API key
-        _ = moltbook._get_agent_headers(agent_id)  # registers on demand
+        try:
+            # Ensure agent is registered and has an API key
+            _ = moltbook._get_agent_headers(agent_id)  # registers on demand
+        except Exception as e:
+            log.warning(f"Could not pre-register agent {agent_id}: {e} — will register on demand")
+            continue
 
         # Best-effort subscription to archetype submolts (if available)
         submolts = getattr(agent_cfg, "submolt_affinity", [])
@@ -233,7 +237,7 @@ async def run_swarm_trial(
                 moltbook.subscribe_submolts(agent_id, submolts)
             except Exception:
                 # Subscriptions are best-effort; failures should not abort the world.
-                continue
+                pass
 
     # Step 2c: Configure swarm_defense (firewalls) for this world
     base_firewalls: list[dict] = OmegaConf.to_container(
