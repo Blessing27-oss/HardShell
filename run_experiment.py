@@ -228,6 +228,7 @@ async def run_swarm_trial(
             try:
                 moltbook.subscribe_submolts(agent_cfg.id, submolts)
             except Exception:
+                # Subscriptions are best-effort; failures should not abort the world.
                 pass
 
     # Step 2c: Configure swarm_defense (firewalls) for this world

@@ -144,55 +144,39 @@ class MoltbookAPIClient:
         sort: str = "hot",
         limit: int = 25,
     ) -> List[dict]:
-        """Fetches the Moltbook feed for a given agent.
+        """Fetches the Moltbook feed for a given agent from the sandbox.
 
-        If personalized=True, hits GET /feed (subscriptions + follows).
-        Otherwise, hits GET /posts with optional submolt filter.
+        The experiment seeds posts into the in-memory sandbox via inject_post().
+        Agents must read from the same sandbox feed to see injected benign and
+        attacker posts. The real PostgreSQL feed is bypassed here.
         """
-        headers = self._get_agent_headers(agent_id)
-        params: Dict[str, object] = {"sort": sort, "limit": limit}
-        if not personalized and submolt:
+        params: Dict[str, object] = {}
+        if submolt:
             params["submolt"] = submolt
 
-        # Prefer personalized /feed for realism, but some local Moltbook
-        # deployments have SQL issues in getPersonalizedFeed. If /feed fails
-        # with a 500, fall back to the global /posts feed so experiments still
-        # run end-to-end.
-        if personalized and not submolt:
-            url = f"{self._api_url}/feed"
-        elif submolt:
-            url = f"{self._api_url}/submolts/{submolt}/feed"
-        else:
-            url = f"{self._api_url}/posts"
-
-        try:
-            resp = self._get_with_retry(url, headers=headers, params=params)
-        except HTTPError as e:
-            if (
-                personalized
-                and not submolt
-                and e.response is not None
-                and e.response.status_code == 500
-            ):
-                # Fallback to global posts feed when personalized feed fails.
-                fallback_url = f"{self._api_url}/posts"
-                resp = self._get_with_retry(fallback_url, headers=headers, params=params)
-            else:
-                raise
+        # Read from the shared sandbox feed — this is the only store where
+        # benign posts and attack payloads injected by the harness actually live.
+        # The real PostgreSQL feed is empty during experiments and cannot see
+        # the in-memory sandbox posts.
+        resp = self._get_with_retry(
+            f"{self._sandbox_url}/feed",
+            headers=self._sandbox_headers,
+            params=params,
+        )
         data = resp.json()
-        # Paginated responses use { success, data: [...], pagination: {...} }
-        return data.get("data", [])
+        return data.get("posts", [])
 
     def publish_post(self, content: str, agent_id: str, submolt: Optional[str] = None) -> dict:
-        """Publishes a post to Moltbook on behalf of an agent."""
-        headers = self._get_agent_headers(agent_id)
-        url = f"{self._api_url}/posts"
-        payload = {
-            "submolt": submolt or "todayilearned",
-            "title": content[:80] if content else "Agent post",
-            "content": content,
-        }
-        resp = self._post_with_retry(url, headers=headers, json=payload)
+        """Publishes a post to the shared sandbox feed on behalf of an agent.
+
+        Writing into the sandbox ensures the post is immediately visible to all
+        other agents reading the sandbox feed in the same world.
+        """
+        resp = self._post_with_retry(
+            f"{self._sandbox_url}/inject",
+            headers=self._sandbox_headers,
+            json={"content": content, "author_id": agent_id, "submolt": submolt},
+        )
         return resp.json().get("post", resp.json())
 
     def comment_post(self, post_id: int, content: str, agent_id: str) -> dict:
