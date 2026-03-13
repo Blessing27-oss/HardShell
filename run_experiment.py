@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import random
+import time
 from pathlib import Path
 
 import hydra
@@ -220,20 +221,14 @@ async def run_swarm_trial(
             else:
                 moltbook.inject_post(post, author_id=f"moltbook_user_{i}")
 
-    # Step 2b: Initialize per-agent Moltbook accounts and subscriptions
+    # Step 2b: Best-effort submolt subscriptions (agents already registered in main())
     for agent_cfg in roster:  # type: ignore[union-attr]
-        agent_id = agent_cfg.id
-        # Ensure agent is registered and has an API key
-        _ = moltbook._get_agent_headers(agent_id)  # registers on demand
-
-        # Best-effort subscription to archetype submolts (if available)
         submolts = getattr(agent_cfg, "submolt_affinity", [])
         if submolts:
             try:
-                moltbook.subscribe_submolts(agent_id, submolts)
+                moltbook.subscribe_submolts(agent_cfg.id, submolts)
             except Exception:
-                # Subscriptions are best-effort; failures should not abort the world.
-                continue
+                pass
 
     # Step 2c: Configure swarm_defense (firewalls) for this world
     base_firewalls: list[dict] = OmegaConf.to_container(
@@ -458,6 +453,12 @@ def main(cfg: DictConfig) -> None:
     except Exception:
         roster = generate_agent_roster(cfg.num_agents, seed=cfg.seed)
         log.info(f"Using factory roster ({len(roster)} agents)")
+
+    # --- Pre-register all agents once, one per second to avoid local API rate limits ---
+    log.info(f"Pre-registering {len(roster)} agents (one per second)...")
+    for agent_cfg in roster:
+        moltbook._get_agent_headers(agent_cfg.id)
+        time.sleep(1.0)
 
     # condition 0 (inject_payload: false) — pass None so no attack is seeded
     inject = cfg.simulation.get("inject_payload", True)
